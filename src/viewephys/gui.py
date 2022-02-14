@@ -1,14 +1,19 @@
 from pathlib import Path
 
 import numpy as np
+import scipy.signal
 import pyqtgraph as pg
 from PyQt5 import QtGui, QtWidgets, QtCore
 
 
+from ibllib.io import spikeglx
 from iblutil.numerical import ismember
 from ibllib.ephys.neuropixel import trace_header
 import easyqc.qt
 from easyqc.gui import EasyQC
+
+T_SCALAR = 1e3  # defaults ms for user side
+A_SCALAR = 1e6  # defaults uV for user side
 
 
 class EphysViewer(EasyQC):
@@ -18,13 +23,25 @@ class EphysViewer(EasyQC):
         self.actionopen.triggered.connect(self.open_file)
         self.settings = QtCore.QSettings('int-brain-lab', 'EphysViewer')
 
-    def open_file(self):
-        file, _ = QtWidgets.QFileDialog.getOpenFileName(
-            parent=self, caption='Select Raw electrophysiology recording', directory=self.settings.value('bin_file_path'), filter='*.*bin')
+    def open_file(self, *args, file=None):
+        if file is None:
+            file, _ = QtWidgets.QFileDialog.getOpenFileName(
+                parent=self, caption='Select Raw electrophysiology recording',
+                directory=self.settings.value('bin_file_path'), filter='*.*bin')
         if file == '':
             return
         file = Path(file)
         self.settings.setValue("path", str(file.parent))
+        self.ctrl.model.sr = spikeglx.Reader(file)
+        first = 10000
+        last = first + 3000
+        data = self.ctrl.model.sr[first:last, :-self.ctrl.model.sr.nsync]
+        butter_kwargs = {'N': 3, 'Wn': 300 / self.ctrl.model.sr.fs * 2, 'btype': 'highpass'}
+        sos = scipy.signal.butter(**butter_kwargs, output='sos')
+        data = scipy.signal.sosfiltfilt(sos, data.T)
+        si = 1 / self.ctrl.model.sr.fs * 1e3
+        self.ctrl.update_data(data.T * A_SCALAR, si=si, taxis=0, t0=0)
+        self.ctrl.set_gain(self.ctrl.model.auto_gain())
 
     @staticmethod
     def _get_or_create(title=None):
@@ -36,7 +53,7 @@ class EphysViewer(EasyQC):
         return ev
 
 
-def viewephys(data, fs, channels=None, br=None, title='ephys', t0=0, t_scalar=1e3, a_scalar=1e6):
+def viewephys(data, fs, channels=None, br=None, title='ephys', t0=0, t_scalar=T_SCALAR, a_scalar=A_SCALAR):
     """
     :param data: [nc, ns]
     :param fs:
@@ -46,11 +63,11 @@ def viewephys(data, fs, channels=None, br=None, title='ephys', t0=0, t_scalar=1e
     :return:
     """
 
-    app = easyqc.qt.create_app()
+    easyqc.qt.create_app()
     ev = EphysViewer._get_or_create(title=title)
 
     if channels is None or br is None:
-        channels = trace_header(version = 1)
+        channels = trace_header(version=1)
     if data is not None:
         ev.ctrl.update_data(data.T * a_scalar, si=1 / fs * t_scalar, h=channels, taxis=0, t0=t0)
     if br is not None:
@@ -63,7 +80,5 @@ def viewephys(data, fs, channels=None, br=None, title='ephys', t0=0, t_scalar=1e
         imitem.setTransform(QtGui.QTransform(*transform))
         ev.plotItem_header_v.setLimits(xMin=-.5, xMax=.5)
 
-    ev.QT_APP = app
     ev.show()
     return ev
-

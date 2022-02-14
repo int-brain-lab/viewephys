@@ -22,7 +22,8 @@ T_BIN = .007  # time bin size in secs
 D_BIN = 10  # depth bin size in um
 YMAX = 4000
 
-SNS_PALETTE = [(0.12156862745098039, 0.4666666666666667, 0.7058823529411765),
+SNS_PALETTE = [
+    (0.12156862745098039, 0.4666666666666667, 0.7058823529411765),
     (1.0, 0.4980392156862745, 0.054901960784313725),
     (0.17254901960784313, 0.6274509803921569, 0.17254901960784313),
     (0.8392156862745098, 0.15294117647058825, 0.1568627450980392),
@@ -82,7 +83,7 @@ class RasterView(QtWidgets.QMainWindow):
         raster, rtimes, depths = bincount2D(
             spikes.times[iok], spikes.depths[iok], T_BIN, D_BIN)
         self.imageItem_raster.setImage(np.flip(raster.T))
-        transform = [T_BIN, 0., 0., 0., D_BIN, 0.,  - .5, - .5, 1.]
+        transform = [T_BIN, 0., 0., 0., D_BIN, 0., -.5, -.5, 1.]
         self.transform = np.array(transform).reshape((3, 3)).T
         self.imageItem_raster.setTransform(QtGui.QTransform(*transform))
         self.plotItem_raster.setLimits(xMin=0, xMax=rtimes[-1], yMin=0, yMax=depths[-1])
@@ -112,7 +113,10 @@ class RasterView(QtWidgets.QMainWindow):
 
     def open_file(self):
         file, _ = QtWidgets.QFileDialog.getOpenFileName(
-            parent=self, caption='Select Raw electrophysiology recording', directory=self.settings.value('bin_file_path'), filter='*.*bin')
+            parent=self,
+            caption='Select Raw electrophysiology recording',
+            directory=self.settings.value('bin_file_path'),
+            filter='*.*bin')
         if file == '':
             return
         file = Path(file)
