@@ -1,2 +1,2 @@
-easyqc
+easyqc >= 0.6.1
 ibllib

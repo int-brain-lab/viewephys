@@ -15,6 +15,18 @@ from easyqc.gui import EasyQC
 T_SCALAR = 1e3  # defaults ms for user side
 A_SCALAR = 1e6  # defaults uV for user side
 
+SNS_PALETTE = [
+    (0.12156862745098039, 0.4666666666666667, 0.7058823529411765),
+    (1.0, 0.4980392156862745, 0.054901960784313725),
+    (0.17254901960784313, 0.6274509803921569, 0.17254901960784313),
+    (0.8392156862745098, 0.15294117647058825, 0.1568627450980392),
+    (0.5803921568627451, 0.403921568627451, 0.7411764705882353),
+    (0.5490196078431373, 0.33725490196078434, 0.29411764705882354),
+    (0.8901960784313725, 0.4666666666666667, 0.7607843137254902),
+    (0.4980392156862745, 0.4980392156862745, 0.4980392156862745),
+    (0.7372549019607844, 0.7411764705882353, 0.13333333333333333),
+    (0.09019607843137255, 0.7450980392156863, 0.8117647058823529)]
+
 
 class EphysViewer(EasyQC):
     def __init__(self, *args, **kwargs):
@@ -22,6 +34,7 @@ class EphysViewer(EasyQC):
         self.menufile.setEnabled(True)
         self.actionopen.triggered.connect(self.open_file)
         self.settings = QtCore.QSettings('int-brain-lab', 'EphysViewer')
+        self.header_curves = {}
 
     def open_file(self, *args, file=None):
         if file is None:
@@ -51,6 +64,39 @@ class EphysViewer(EasyQC):
             ev = EphysViewer()
             ev.setWindowTitle(title)
         return ev
+
+    def rm_header_curve(self, name):
+        if name not in self.header_curves:
+            return
+        curve = self.header_curves.pop(name)
+        self.plotItem_header_h.removeItem(curve)
+
+    def add_header_times(self, times, name):
+        """
+        Adds behaviour events in the horizontal header axes. Wra[s the add_header_curve method
+        :param times: np.array , vector of times
+        :param name: string
+        :return:
+        """
+        y = np.tile(np.array([0, 1, np.nan]), times.size)
+        x = np.tile(times[:, np.newaxis] * T_SCALAR, 3).flatten()
+        self.add_header_curve(x, y, name)
+
+    def add_header_curve(self, x, y, name):
+        """
+        Adds a plot in the horizontal header axes linked to the image display. The x-axis
+        represents times and is linked to the image display
+        :param x:
+        :param y:
+        :param name:
+        :return:
+        """
+        if name in self.header_curves:
+            self.rm_header_curve(name)
+        ind = len(self.header_curves.keys())
+        pen = pg.mkPen(color=np.array(SNS_PALETTE[ind]) * 255)
+        self.header_curves[name] = pg.PlotCurveItem(x=x, y=y, connect='finite', pen=pen, name='licks')
+        self.plotItem_header_h.addItem(self.header_curves[name])
 
 
 def viewephys(data, fs, channels=None, br=None, title='ephys', t0=0, t_scalar=T_SCALAR, a_scalar=A_SCALAR):
