@@ -3,17 +3,19 @@ from pathlib import Path
 import numpy as np
 import scipy.signal
 import pyqtgraph as pg
-from PyQt5 import QtGui, QtWidgets, QtCore
+from PyQt5 import QtGui, QtWidgets, QtCore, uic
 
 
 from ibllib.io import spikeglx
 from iblutil.numerical import ismember
 from ibllib.ephys.neuropixel import trace_header
+from ibllib.dsp import voltage
 import easyqc.qt
 from easyqc.gui import EasyQC
 
 T_SCALAR = 1e3  # defaults ms for user side
 A_SCALAR = 1e6  # defaults uV for user side
+NSAMP_CHUNK = 10000  # window length in samples
 
 SNS_PALETTE = [
     (0.12156862745098039, 0.4666666666666667, 0.7058823529411765),
@@ -28,13 +30,27 @@ SNS_PALETTE = [
     (0.09019607843137255, 0.7450980392156863, 0.8117647058823529)]
 
 
-class EphysViewer(EasyQC):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.menufile.setEnabled(True)
+class EphysBinViewer(QtWidgets.QMainWindow):
+    def __init__(self, bin_file=None, *args, **kwargs):
+        """
+        :param parent:
+        :param sr: ibllib.io.spikeglx.Reader instance
+        """
+        super(EphysBinViewer, self).__init__(*args, *kwargs)
+        self.settings = QtCore.QSettings('int-brain-lab', 'EphysBinViewer')
+        uic.loadUi(Path(__file__).parent.joinpath('nav_file.ui'), self)
         self.actionopen.triggered.connect(self.open_file)
-        self.settings = QtCore.QSettings('int-brain-lab', 'EphysViewer')
-        self.header_curves = {}
+        self.horizontalSlider.setMinimum(0)
+        self.horizontalSlider.setSingleStep(1)
+        self.horizontalSlider.setTickInterval(10)
+        self.horizontalSlider.sliderReleased.connect(self.on_horizontalSliderReleased)
+        self.horizontalSlider.valueChanged.connect(self.on_horizontalSliderValueChanged)
+        self.label_smin.setText('0')
+        self.show()
+        self.viewers = {'butterworth': None, 'destripe': None}
+        self.cbs = {'butterworth': self.cb_butterworth_ap, 'destripe': self.cb_destripe_ap}
+        if bin_file is not None:
+            self.open_file(file=bin_file)
 
     def open_file(self, *args, file=None):
         if file is None:
@@ -45,16 +61,62 @@ class EphysViewer(EasyQC):
             return
         file = Path(file)
         self.settings.setValue("path", str(file.parent))
-        self.ctrl.model.sr = spikeglx.Reader(file)
-        first = 10000
-        last = first + 3000
-        data = self.ctrl.model.sr[first:last, :-self.ctrl.model.sr.nsync]
-        butter_kwargs = {'N': 3, 'Wn': 300 / self.ctrl.model.sr.fs * 2, 'btype': 'highpass'}
+        self.sr = spikeglx.Reader(file)
+        # enable and set slider
+        self.horizontalSlider.setMaximum(np.floor(self.sr.ns / NSAMP_CHUNK))
+        tmax = np.floor(self.sr.ns / NSAMP_CHUNK) * NSAMP_CHUNK / self.sr.fs
+        self.label_smax.setText(f"{tmax:0.2f}s")
+        tlabel = f'{self.sr.file_bin.name} \n \n' \
+                 f'NEUROPIXEL {self.sr.major_version} \n' \
+                 f'{self.sr.rl} seconds long \n' \
+                 f'{self.sr.fs} Hz Sampling Frequency \n' \
+                 f'{self.sr.nc} Channels'
+        self.label.setText(tlabel)
+        self.horizontalSlider.setValue(0)
+        self.horizontalSlider.setEnabled(True)
+        self.on_horizontalSliderReleased()
+
+    def on_horizontalSliderValueChanged(self):
+        tcur = self.horizontalSlider.value() * NSAMP_CHUNK / self.sr.fs
+        self.label_sval.setText(f"{tcur:0.2f}s")
+
+    def on_horizontalSliderReleased(self):
+        first = int(float(self.horizontalSlider.value()) * NSAMP_CHUNK)
+        last = first + int(NSAMP_CHUNK)
+        data = self.sr[first:last, :-self.sr.nsync].T
+        # get parameters for both AP and LFP band
+
+        if self.sr.type == 'lf':
+            butter_kwargs = {'N': 3, 'Wn': 3 / self.sr.fs * 2, 'btype': 'highpass'}
+            fcn_destripe = voltage.destripe_lfp
+        else:
+            butter_kwargs = {'N': 3, 'Wn': 300 / self.sr.fs * 2, 'btype': 'highpass'}
+            fcn_destripe = voltage.destripe
         sos = scipy.signal.butter(**butter_kwargs, output='sos')
-        data = scipy.signal.sosfiltfilt(sos, data.T)
-        si = 1 / self.ctrl.model.sr.fs * 1e3
-        self.ctrl.update_data(data.T * A_SCALAR, si=si, taxis=0, t0=0)
-        self.ctrl.set_gain(self.ctrl.model.auto_gain())
+        data = scipy.signal.sosfiltfilt(sos, data)
+        t0 = first / self.sr.fs * 0
+        for k in self.viewers:
+            if not self.cbs[k].isChecked():
+                continue
+            if k == 'destripe':
+                data = fcn_destripe(x=data, fs=self.sr.fs, channel_labels=True, neuropixel_version=self.sr.major_version)
+            self.viewers[k] = viewephys(data, self.sr.fs, title=k, t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
+
+    def closeEvent(self, event):
+        self.destroy()
+        for k in self.viewers:
+            ev = self.viewers[k]
+            if ev is not None:
+                ev.destroy()
+
+
+class EphysViewer(EasyQC):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.menufile.setEnabled(True)
+        self.settings = QtCore.QSettings('int-brain-lab', 'EphysViewer')
+        self.header_curves = {}
+        self.show()
 
     @staticmethod
     def _get_or_create(title=None):
