@@ -39,6 +39,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         super(EphysBinViewer, self).__init__(*args, *kwargs)
         self.settings = QtCore.QSettings('int-brain-lab', 'EphysBinViewer')
         uic.loadUi(Path(__file__).parent.joinpath('nav_file.ui'), self)
+        self.setWindowIcon(QtGui.QIcon(str(Path(__file__).parent.joinpath('viewephys.svg'))))
         self.actionopen.triggered.connect(self.open_file)
         self.horizontalSlider.setMinimum(0)
         self.horizontalSlider.setSingleStep(1)

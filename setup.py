@@ -8,7 +8,7 @@ with open('requirements.txt') as f:
 
 setuptools.setup(
     name="viewephys",
-    version="0.1.0",
+    version="0.1.1",
     author="Olivier Winter",
     description="Raw Neuropixel data viewer for numpy",
     long_description=long_description,
@@ -25,6 +25,7 @@ setuptools.setup(
     install_requires=require,
     package_dir={'': 'src'},
     packages=setuptools.find_packages(where="src"),
+    package_data={'viewephys': ['raster.ui', 'nav_file.ui', 'viewephys.svg']},
     python_requires=">=3.8",
     entry_points={
         'console_scripts': ['viewephys=viewephys.command_line:viewephys'],

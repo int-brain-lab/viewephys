@@ -12,6 +12,5 @@ def viewephys():
     :return:
     """
     app = easyqc.qt.create_app()
-    self = EphysBinViewer()
-    # the quit function will stop the app if it is provided in the QT_APP property
+    self = EphysBinViewer()  # noqa
     sys.exit(app.exec())
