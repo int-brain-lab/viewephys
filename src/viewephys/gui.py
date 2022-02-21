@@ -103,11 +103,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             self.viewers[k] = viewephys(data, self.sr.fs, title=k, t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
 
     def closeEvent(self, event):
-        self.destroy()
         for k in self.viewers:
             ev = self.viewers[k]
             if ev is not None:
-                ev.destroy()
+                ev.close()
+        self.close()
 
 
 class EphysViewer(EasyQC):
