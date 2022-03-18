@@ -5,7 +5,6 @@ import scipy.signal
 import pyqtgraph as pg
 from PyQt5 import QtGui, QtWidgets, QtCore, uic
 
-
 from ibllib.io import spikeglx
 from iblutil.numerical import ismember
 from ibllib.ephys.neuropixel import trace_header
@@ -114,9 +113,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 class EphysViewer(EasyQC):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.ctrl.model.picks = {'sample': np.array([]), 'trace': np.array([]), 'amp': np.array([])}
         self.menufile.setEnabled(True)
         self.settings = QtCore.QSettings('int-brain-lab', 'EphysViewer')
         self.header_curves = {}
+        self.menupick = self.menuBar().addMenu('&Pick')
+        self.action_pick = QtWidgets.QAction('Pick', self)
+        self.action_pick.setCheckable(True)
+        self.menupick.addAction(self.action_pick)
+        self.action_pick.triggered.connect(self.menu_pick_callback)
         self.show()
 
     @staticmethod
@@ -160,6 +165,58 @@ class EphysViewer(EasyQC):
         pen = pg.mkPen(color=np.array(SNS_PALETTE[ind]) * 255)
         self.header_curves[name] = pg.PlotCurveItem(x=x, y=y, connect='finite', pen=pen, name='licks')
         self.plotItem_header_h.addItem(self.header_curves[name])
+
+    def menu_pick_callback(self, event):
+        # disable the picking
+        if self.action_pick.isChecked():
+            self.viewBox_seismic.scene().sigMouseClicked.connect(self.mouseClickPickingEvent)
+        else:
+            self.viewBox_seismic.scene().sigMouseClicked.disconnect(self.mouseClickPickingEvent)
+
+    def mouseClickPickingEvent(self, event):
+        """
+        When the pick action is enabled this is triggered on mouse click
+        - left button click sets a point
+        - middle button removes a point
+        - control + left does not wrap on maximum around pick
+        """
+        TR_RANGE = 3
+        S_RANGE = int(0.5 / self.ctrl.model.si)
+        qxy = self.imageItem_seismic.mapFromScene(event.scenePos())
+        s, tr = (qxy.x(), qxy.y())
+        if event.buttons() == QtCore.Qt.MiddleButton:
+            iclose = np.where(np.logical_and(
+                np.abs(self.ctrl.model.picks['sample'] - s) <= (S_RANGE + 1),
+                np.abs(self.ctrl.model.picks['trace'] - tr) <= (TR_RANGE + 1)
+            ))[0]
+            self.ctrl.model.picks = {k: np.delete(self.ctrl.model.picks[k], iclose) for k in self.ctrl.model.picks}
+
+        elif event.buttons() == QtCore.Qt.LeftButton:
+            if event.modifiers() == QtCore.Qt.ControlModifier:
+                tmax, xmax = (int(round(s)), int(round(tr)))
+            else:
+                xscale = np.arange(-TR_RANGE, TR_RANGE + 1) + np.round(tr).astype(np.int32)
+                tscale = np.arange(-S_RANGE, S_RANGE + 1) + np.round(s).astype(np.int32)
+                ix = slice(xscale[0], xscale[-1] + 1)
+                it = slice(tscale[0], tscale[-1] + 1)
+
+                out_of_tr_range = xscale[0] < 0 or xscale[-1] > (self.ctrl.model.ntr - 1)
+                out_of_time_range = tscale[0] < 0 or tscale[-1] > (self.ctrl.model.ns - 1)
+
+                if out_of_time_range or out_of_tr_range:
+                    print(xscale, tscale)
+                    return
+                tmax, xmax = np.unravel_index(np.argmax(np.abs(self.ctrl.model.data[it, ix])),
+                                              (S_RANGE * 2 + 1, TR_RANGE * 2 + 1))
+                tmax, xmax = (tscale[tmax], xscale[xmax])
+
+            self.ctrl.model.picks['sample'] = np.r_[self.ctrl.model.picks['sample'], tmax]
+            self.ctrl.model.picks['trace'] = np.r_[self.ctrl.model.picks['trace'], xmax]
+            self.ctrl.model.picks['amp'] = np.r_[self.ctrl.model.picks['amp'], self.ctrl.model.data[tmax, xmax]]
+        # updates scatter plot
+        self.ctrl.add_scatter(self.ctrl.model.picks['sample'] * self.ctrl.model.si,
+                              self.ctrl.model.picks['trace'],
+                              label='_picks', rgb=(0, 255, 255))
 
 
 def viewephys(data, fs, channels=None, br=None, title='ephys', t0=0, t_scalar=T_SCALAR, a_scalar=A_SCALAR):
