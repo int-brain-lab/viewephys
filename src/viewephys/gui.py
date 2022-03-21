@@ -236,7 +236,7 @@ def viewephys(data, fs, channels=None, br=None, title='ephys', t0=0, t_scalar=T_
         channels = trace_header(version=1)
     if data is not None:
         ev.ctrl.update_data(data.T * a_scalar, si=1 / fs * t_scalar, h=channels, taxis=0, t0=t0)
-    if br is not None:
+    if br is not None and 'atlas_id' in channels:
         _, ir = ismember(channels['atlas_id'], br.id)
         image = br.rgb[ir].astype(np.uint8)
         image = image[np.newaxis, :, :]
