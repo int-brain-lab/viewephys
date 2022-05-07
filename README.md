@@ -3,14 +3,23 @@ Neuropixel raw data viewer
 
 ## Installation
 `pip install viewephys`
-This is compatible with the [IBL environment](https://github.com/int-brain-lab/iblenv)
 
-Alternatively, for developers:
-```
+Alternatively, in development mode:
+```shell
 git clone https://github.com/oliche/viewephys.git
 cd viewephys
 pip install -e .
 ```
+
+### Supported environments
+This is compatible with the [IBL environment](https://github.com/int-brain-lab/iblenv)
+
+Otherwise, you can create a new environment as such:
+```shell
+conda create -n viewephys python=3.9
+conda activate viewephys
+```
+And then follow the install instructions above.
 
 ## Examples
 

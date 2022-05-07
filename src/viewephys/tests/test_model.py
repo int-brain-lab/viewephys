@@ -2,10 +2,12 @@ from viewephys.raster import ProbeData
 import numpy as np
 import pandas as pd
 from brainbox.tests.test_metrics import multiple_spike_trains
-from ibllib.ephys.neuropixel import trace_header
+from neuropixel import trace_header
 
 
 def test_model_dataclass():
+    # TODO: make a meta-data file fixture to create the bin file for the test
+    # this test won't run on a machine without the bin file below
     st, sa, sc = multiple_spike_trains()
     spikes = dict(times=st, clusters=sc, amps=sa)
     clusters = dict(channels=np.random.randint(0, 384, np.max(sc)))
