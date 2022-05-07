@@ -26,6 +26,8 @@ And then follow the install instructions above.
 ### Visualize raw binary file
 Activate your environment and type `viewephys`, you can then load a neuropixel binary file using the file menu.
 
+![alt text](./docs/raw_bin_viewer_destripe.png "Ephys viewer ")
+
 ### Load in a numpy array or slice
 ```python
 # if running ipython, you may have to use the `%gui qt` magic command
@@ -35,8 +37,7 @@ nc, ns, fs = (384, 50000, 30000)  # this mimics one second of neuropixel data
 data = np.random.randn(nc, ns) / 1e6  # volts by default
 ve = viewephys(data, fs=fs)
 ```
-
-### stream IBL data
+![alt text](./docs/view_rand_array.png "Ephys viewer")
     
 
 ## Contribution
