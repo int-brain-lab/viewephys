@@ -27,6 +27,9 @@ data = np.random.randn(nc, ns) / 1e6  # volts by default
 ve = viewephys(data, fs=fs)
 ```
 
+### stream IBL data
+    
+
 ## Contribution
 Fork and PR.
 

@@ -13,8 +13,8 @@ from brainbox.processing import bincount2D
 from brainbox.io.one import SpikeSortingLoader
 import one.alf.io as alfio
 from one.alf.files import get_session_path
-from ibllib.io import spikeglx
-from ibllib.dsp import voltage
+import spikeglx
+from neurodsp import voltage
 
 from viewephys.gui import viewephys, SNS_PALETTE
 

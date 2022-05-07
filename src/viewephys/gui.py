@@ -5,10 +5,10 @@ import scipy.signal
 import pyqtgraph as pg
 from PyQt5 import QtGui, QtWidgets, QtCore, uic
 
-from ibllib.io import spikeglx
+import spikeglx
+from neuropixel import trace_header
+from neurodsp import voltage
 from iblutil.numerical import ismember
-from ibllib.ephys.neuropixel import trace_header
-from ibllib.dsp import voltage
 import easyqc.qt
 from easyqc.gui import EasyQC
 
@@ -111,17 +111,25 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
 
 class EphysViewer(EasyQC):
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.ctrl.model.picks = {'sample': np.array([]), 'trace': np.array([]), 'amp': np.array([])}
         self.menufile.setEnabled(True)
         self.settings = QtCore.QSettings('int-brain-lab', 'EphysViewer')
         self.header_curves = {}
+        # menus handling
+        # menu pick
         self.menupick = self.menuBar().addMenu('&Pick')
         self.action_pick = QtWidgets.QAction('Pick', self)
         self.action_pick.setCheckable(True)
         self.menupick.addAction(self.action_pick)
         self.action_pick.triggered.connect(self.menu_pick_callback)
+        # menu channels
+        self.action_label_channels = QtWidgets.QAction('Label channels', self)
+        self.action_label_channels.setCheckable(True)
+        self.menupick.addAction(self.action_label_channels)
+        # finish init
         self.show()
 
     @staticmethod
