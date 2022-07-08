@@ -41,6 +41,7 @@ class ProbeData:
     channels: Union[dict, pd.DataFrame] = field(default_factory=dict)
     trials: Union[dict, pd.DataFrame] = field(default_factory=dict)
 
+
     def __post_init__(self):
         self.sr = spikeglx.Reader(self.ap_file)
 

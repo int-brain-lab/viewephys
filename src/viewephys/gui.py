@@ -60,7 +60,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if file == '':
             return
         file = Path(file)
-        self.settings.setValue("path", str(file.parent))
+        self.settings.setValue("bin_file_path", str(file.parent))
         self.sr = spikeglx.Reader(file)
         # enable and set slider
         self.horizontalSlider.setMaximum(np.floor(self.sr.ns / NSAMP_CHUNK))
