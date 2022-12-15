@@ -61,7 +61,10 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             return
         file = Path(file)
         self.settings.setValue("bin_file_path", str(file.parent))
-        self.sr = spikeglx.Reader(file)
+        try:
+            self.sr = spikeglx.Reader(file)
+        except AssertionError:
+            self.sr = spikeglx.Reader(file, dtype='int16', nc=384, fs=30000, ns=file.stat().st_size / 384 / 2)
         # enable and set slider
         self.horizontalSlider.setMaximum(np.floor(self.sr.ns / NSAMP_CHUNK))
         tmax = np.floor(self.sr.ns / NSAMP_CHUNK) * NSAMP_CHUNK / self.sr.fs
@@ -227,13 +230,15 @@ class EphysViewer(EasyQC):
                               label='_picks', rgb=(0, 255, 255))
 
 
-def viewephys(data, fs, channels=None, br=None, title='ephys', t0=0, t_scalar=T_SCALAR, a_scalar=A_SCALAR):
+def viewephys(data, fs, channels=None, br=None, title='ephys', t0=0, t_scalar=T_SCALAR, a_scalar=A_SCALAR,
+              colormap=None):
     """
     :param data: [nc, ns]
     :param fs:
     :param channels:
     :param br:
     :param title:
+    :param colormap: non-standard colormap from colorcet or matplotlib such as "PuOr"
     :return:
     """
 
@@ -255,4 +260,6 @@ def viewephys(data, fs, channels=None, br=None, title='ephys', t0=0, t_scalar=T_
         ev.plotItem_header_v.setLimits(xMin=-.5, xMax=.5)
 
     ev.show()
+    if colormap is not None:
+        ev.setColorMap(colormap)
     return ev
