@@ -95,7 +95,7 @@ class RasterView(QtWidgets.QMainWindow):
     def set_model(self, sr, spikes, clusters, channels=None, trials=None):
         self.data = ProbeData(spikes, clusters, channels=channels, trials=trials, sr=sr)
         # set image
-        self.imageItem_raster.setImage(np.flip(self.data.raster.T))
+        self.imageItem_raster.setImage(np.flipud(self.data.raster.T))
         transform = [T_BIN, 0., 0., 0., D_BIN, 0., -.5, -.5, 1.]
         self.transform = np.array(transform).reshape((3, 3)).T
         self.imageItem_raster.setTransform(QtGui.QTransform(*transform))
