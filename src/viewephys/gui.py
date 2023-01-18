@@ -188,43 +188,44 @@ class EphysViewer(EasyQC):
         """
         When the pick action is enabled this is triggered on mouse click
         - left button click sets a point
-        - middle button removes a point
+        - shift + left button removes a point
         - control + left does not wrap on maximum around pick
         """
         TR_RANGE = 3
         S_RANGE = int(0.5 / self.ctrl.model.si)
         qxy = self.imageItem_seismic.mapFromScene(event.scenePos())
         s, tr = (qxy.x(), qxy.y())
-        if event.buttons() == QtCore.Qt.MiddleButton:
-            iclose = np.where(np.logical_and(
-                np.abs(self.ctrl.model.picks['sample'] - s) <= (S_RANGE + 1),
-                np.abs(self.ctrl.model.picks['trace'] - tr) <= (TR_RANGE + 1)
-            ))[0]
-            self.ctrl.model.picks = {k: np.delete(self.ctrl.model.picks[k], iclose) for k in self.ctrl.model.picks}
-
-        elif event.buttons() == QtCore.Qt.LeftButton:
-            if event.modifiers() == QtCore.Qt.ControlModifier:
-                tmax, xmax = (int(round(s)), int(round(tr)))
+        # if event.buttons() == QtCore.Qt.MiddleButton:
+        if event.buttons() == QtCore.Qt.LeftButton:
+            if event.modifiers() == QtCore.Qt.ShiftModifier:
+                iclose = np.where(np.logical_and(
+                    np.abs(self.ctrl.model.picks['sample'] - s) <= (S_RANGE + 1),
+                    np.abs(self.ctrl.model.picks['trace'] - tr) <= (TR_RANGE + 1)
+                ))[0]
+                self.ctrl.model.picks = {k: np.delete(self.ctrl.model.picks[k], iclose) for k in self.ctrl.model.picks}
             else:
-                xscale = np.arange(-TR_RANGE, TR_RANGE + 1) + np.round(tr).astype(np.int32)
-                tscale = np.arange(-S_RANGE, S_RANGE + 1) + np.round(s).astype(np.int32)
-                ix = slice(xscale[0], xscale[-1] + 1)
-                it = slice(tscale[0], tscale[-1] + 1)
+                if event.modifiers() == QtCore.Qt.ControlModifier:
+                    tmax, xmax = (int(round(s)), int(round(tr)))
 
-                out_of_tr_range = xscale[0] < 0 or xscale[-1] > (self.ctrl.model.ntr - 1)
-                out_of_time_range = tscale[0] < 0 or tscale[-1] > (self.ctrl.model.ns - 1)
+                else:
+                    xscale = np.arange(-TR_RANGE, TR_RANGE + 1) + np.round(tr).astype(np.int32)
+                    tscale = np.arange(-S_RANGE, S_RANGE + 1) + np.round(s).astype(np.int32)
+                    ix = slice(xscale[0], xscale[-1] + 1)
+                    it = slice(tscale[0], tscale[-1] + 1)
 
-                if out_of_time_range or out_of_tr_range:
-                    print(xscale, tscale)
-                    return
-                tmax, xmax = np.unravel_index(np.argmax(np.abs(self.ctrl.model.data[it, ix])),
-                                              (S_RANGE * 2 + 1, TR_RANGE * 2 + 1))
-                tmax, xmax = (tscale[tmax], xscale[xmax])
+                    out_of_tr_range = xscale[0] < 0 or xscale[-1] > (self.ctrl.model.ntr - 1)
+                    out_of_time_range = tscale[0] < 0 or tscale[-1] > (self.ctrl.model.ns - 1)
 
-            self.ctrl.model.picks['sample'] = np.r_[self.ctrl.model.picks['sample'], tmax]
-            self.ctrl.model.picks['trace'] = np.r_[self.ctrl.model.picks['trace'], xmax]
-            self.ctrl.model.picks['amp'] = np.r_[self.ctrl.model.picks['amp'], self.ctrl.model.data[tmax, xmax]]
-            # TODO ADD CLUSTERS
+                    if out_of_time_range or out_of_tr_range:
+                        print(xscale, tscale)
+                        return
+                    tmax, xmax = np.unravel_index(np.argmax(np.abs(self.ctrl.model.data[it, ix])),
+                                                  (S_RANGE * 2 + 1, TR_RANGE * 2 + 1))
+                    tmax, xmax = (tscale[tmax], xscale[xmax])
+
+                self.ctrl.model.picks['sample'] = np.r_[self.ctrl.model.picks['sample'], tmax]
+                self.ctrl.model.picks['trace'] = np.r_[self.ctrl.model.picks['trace'], xmax]
+                self.ctrl.model.picks['amp'] = np.r_[self.ctrl.model.picks['amp'], self.ctrl.model.data[tmax, xmax]]
         # updates scatter plot
         self.ctrl.add_scatter(self.ctrl.model.picks['sample'] * self.ctrl.model.si,
                               self.ctrl.model.picks['trace'],
