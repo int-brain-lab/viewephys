@@ -117,7 +117,7 @@ class EphysViewer(EasyQC):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.ctrl.model.picks = {'sample': np.array([]), 'trace': np.array([]), 'amp': np.array([])}
+        self.ctrl.model.picks = {'sample': np.array([]), 'trace': np.array([]), 'amp': np.array([])}  # TODO ADD CLUSTERS
         self.menufile.setEnabled(True)
         self.settings = QtCore.QSettings('int-brain-lab', 'EphysViewer')
         self.header_curves = {}
@@ -224,6 +224,7 @@ class EphysViewer(EasyQC):
             self.ctrl.model.picks['sample'] = np.r_[self.ctrl.model.picks['sample'], tmax]
             self.ctrl.model.picks['trace'] = np.r_[self.ctrl.model.picks['trace'], xmax]
             self.ctrl.model.picks['amp'] = np.r_[self.ctrl.model.picks['amp'], self.ctrl.model.data[tmax, xmax]]
+            # TODO ADD CLUSTERS
         # updates scatter plot
         self.ctrl.add_scatter(self.ctrl.model.picks['sample'] * self.ctrl.model.si,
                               self.ctrl.model.picks['trace'],
