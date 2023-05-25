@@ -1,3 +1,4 @@
-easyqc >= 0.6.2
+easyqc >= 0.7.0
 ibl-neuropixel
 ibllib
+iblutil >= 1.6.0

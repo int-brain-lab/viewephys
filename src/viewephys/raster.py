@@ -10,12 +10,12 @@ from PyQt5 import QtWidgets, QtCore, QtGui, uic
 import pyqtgraph as pg
 
 from brainbox.processing import bincount2D
-from brainbox.io.one import SpikeSortingLoader, SessionLoader
+from brainbox.io.one import EphysSessionLoader
 from brainbox.io.spikeglx import Streamer
 import one.alf.io as alfio
 from one.alf.files import get_session_path
 import spikeglx
-from neurodsp import voltage
+from neurodsp import voltage, utils
 from ibllib.atlas import BrainRegions
 
 from viewephys.gui import viewephys, SNS_PALETTE
@@ -32,13 +32,15 @@ def view_pid(pid, one):
     :param one:
     :return:
     """
-    ssl = SpikeSortingLoader(pid=pid, one=one)
-    sl = SessionLoader(one=one, eid=ssl.eid)
+    eid, pname = one.pid2eid(pid)
+    sl = EphysSessionLoader(eid=eid, one=one)
     sl.load_trials()
+    sl.load_spike_sorting(pnames=[pname])
     sr = Streamer(pid=pid, one=one)
     rv = RasterView()
-    rv.set_model(sr, *ssl.load_spike_sorting(dataset_types=['spikes.samples']), trials=sl.trials)
+    rv.set_model(sr, *sl.load_spike_sorting(dataset_types=['spikes.samples']), trials=sl.trials)
     return rv
+
 
 def view_raster(bin_file):
     """
@@ -50,7 +52,7 @@ def view_raster(bin_file):
     bin_file = Path(bin_file)
     pname = bin_file.parent.name
     session_path = get_session_path(bin_file)
-    ssl = SpikeSortingLoader(session_path=session_path, pname=pname)
+    ssl = EphysSessionLoader(session_path=session_path, pname=pname)
     spikes, clusters, channels = ssl.load_spike_sorting(dataset_types=['spikes.samples'])
     trials = alfio.load_object(ssl.session_path.joinpath('alf'), 'trials')
     return RasterView(bin_file, spikes, clusters, trials=trials)
@@ -73,6 +75,7 @@ class ProbeData:
             self.spikes.times[iok], self.spikes.depths[iok], T_BIN, D_BIN)
         self.br = BrainRegions()
 
+
 class RasterView(QtWidgets.QMainWindow):
     def __init__(self, *args, **kwargs):
         self.eqcs = []
@@ -93,7 +96,7 @@ class RasterView(QtWidgets.QMainWindow):
         self.settings = QtCore.QSettings('int-brain-lab', 'Raster')
 
     def set_model(self, sr, spikes, clusters, channels=None, trials=None):
-        self.data = ProbeData(spikes, clusters, channels=channels, trials=trials, sr=sr)
+        self.model = ProbeData(spikes, clusters, channels=channels, trials=trials, sr=sr)
         # set image
         self.imageItem_raster.setImage(self.data.raster.T)
         transform = [T_BIN, 0., 0., 0., D_BIN, 0., -.5, -.5, 1.]
@@ -179,7 +182,7 @@ class RasterView(QtWidgets.QMainWindow):
         destripe = voltage.destripe(raw, fs=self.data.sr.fs, channel_labels=True)
         self.eqc_raw = viewephys(butt, self.data.sr.fs, channels=self.data.channels, br=self.data.br, title='butt', t0=t0, t_scalar=1)
         self.eqc_des = viewephys(destripe, self.data.sr.fs, channels=self.data.channels, br=self.data.br, title='destripe', t0=t0, t_scalar=1)
-
+        stripes_noise = 20 * np.log10(np.median(utils.rms(butt - destripe)))
         eqc_xrange = [t0 + tlen / 2 - 0.01, t0 + tlen / 2 + 0.01]
         self.eqc_des.viewBox_seismic.setXRange(*eqc_xrange)
         self.eqc_raw.viewBox_seismic.setXRange(*eqc_xrange)
