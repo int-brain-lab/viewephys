@@ -13,9 +13,9 @@ setuptools.setup(
     description="Raw Neuropixel data viewer for numpy",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/oliche/viewephys",
+    url="https://github.com/int-brain-lab/viewephys",
     project_urls={
-        "Bug Tracker": "https://github.com/oliche/viewephys/issues",
+        "Bug Tracker": "https://github.com/int-brain-lab/viewephys/issues",
     },
     classifiers=[
         "Programming Language :: Python :: 3",

@@ -6,7 +6,7 @@ Neuropixel raw data viewer
 
 Alternatively, in development mode:
 ```shell
-git clone https://github.com/oliche/viewephys.git
+git clone https://github.com/int-brain-lab/viewephys.git
 cd viewephys
 pip install -e .
 ```
