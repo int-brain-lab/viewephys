@@ -231,7 +231,7 @@ class EphysViewer(EasyQC):
                               self.ctrl.model.picks['trace'],
                               label='_picks', rgb=(0, 255, 255))
 
-    def save_current_trace(self, filename):
+    def save_current_plot(self, filename):
         """
         Saves only the currently shown plot to `filename`.
         :param filename:
