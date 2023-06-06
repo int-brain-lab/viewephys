@@ -8,7 +8,7 @@ with open('requirements.txt') as f:
 
 setuptools.setup(
     name="viewephys",
-    version="0.2.1",
+    version="0.2.2",
     author="Olivier Winter",
     description="Raw Neuropixel data viewer for numpy",
     long_description=long_description,
