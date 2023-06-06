@@ -28,6 +28,11 @@ Activate your environment and type `viewephys`, you can then load a neuropixel b
 
 ![alt text](./docs/raw_bin_viewer_destripe.png "Ephys viewer ")
 
+Alternatively you can point the viewer to a specific file using the command line:
+```shell
+viewphys -f /path/to/raw.bin
+```
+
 ### Load in a numpy array or slice
 ```python
 # if running ipython, you may have to use the `%gui qt` magic command
