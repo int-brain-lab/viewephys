@@ -66,7 +66,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         except AssertionError:
             self.sr = spikeglx.Reader(file, dtype='int16', nc=384, fs=30000, ns=file.stat().st_size / 384 / 2)
         # enable and set slider
-        self.horizontalSlider.setMaximum(np.floor(self.sr.ns / NSAMP_CHUNK))
+        self.horizontalSlider.setMaximum(int(np.floor(self.sr.ns / NSAMP_CHUNK)))
         tmax = np.floor(self.sr.ns / NSAMP_CHUNK) * NSAMP_CHUNK / self.sr.fs
         self.label_smax.setText(f"{tmax:0.2f}s")
         tlabel = f'{self.sr.file_bin.name} \n \n' \
@@ -102,8 +102,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if not self.cbs[k].isChecked():
                 continue
             if k == 'destripe':
-                data = fcn_destripe(x=data, fs=self.sr.fs, channel_labels=True, neuropixel_version=self.sr.major_version)
-            self.viewers[k] = viewephys(data, self.sr.fs, title=k, t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
+                data = fcn_destripe(x=data, fs=self.sr.fs, channel_labels=True, h=self.sr.geometry, neuropixel_version=self.sr.major_version)
+            self.viewers[k] = viewephys(data, self.sr.fs, channels=self.sr.geometry, title=k, t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
 
     def closeEvent(self, event):
         for k in self.viewers:
@@ -237,7 +237,7 @@ def viewephys(data, fs, channels=None, br=None, title='ephys', t0=0, t_scalar=T_
     """
     :param data: [nc, ns]
     :param fs:
-    :param channels:
+    :param channels: dictionary of trace headers (nc, ) or dataframe (nc, ncolumns)
     :param br:
     :param title:
     :param colormap: non-standard colormap from colorcet or matplotlib such as "PuOr"
@@ -247,7 +247,7 @@ def viewephys(data, fs, channels=None, br=None, title='ephys', t0=0, t_scalar=T_
     easyqc.qt.create_app()
     ev = EphysViewer._get_or_create(title=title)
 
-    if channels is None or br is None:
+    if channels is None:
         channels = trace_header(version=1)
     if data is not None:
         ev.ctrl.update_data(data.T * a_scalar, si=1 / fs * t_scalar, h=channels, taxis=0, t0=t0)
