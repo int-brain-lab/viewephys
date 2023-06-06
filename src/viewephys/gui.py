@@ -231,6 +231,13 @@ class EphysViewer(EasyQC):
                               self.ctrl.model.picks['trace'],
                               label='_picks', rgb=(0, 255, 255))
 
+    def save_current_plot(self, filename):
+        """
+        Saves only the currently shown plot to `filename`.
+        :param filename:
+        :return:
+        """
+        self.plotItem_seismic.grab().save(filename)
 
 def viewephys(data, fs, channels=None, br=None, title='ephys', t0=0, t_scalar=T_SCALAR, a_scalar=A_SCALAR,
               colormap=None):
