@@ -42,6 +42,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         uic.loadUi(Path(__file__).parent.joinpath('nav_file.ui'), self)
         self.setWindowIcon(QtGui.QIcon(str(Path(__file__).parent.joinpath('viewephys.svg'))))
         self.actionopen.triggered.connect(self.open_file)
+        self.actionopen_live_recording.triggered.connect(self.open_file_live)
         self.horizontalSlider.setMinimum(0)
         self.horizontalSlider.setSingleStep(1)
         self.horizontalSlider.setTickInterval(10)
@@ -54,7 +55,10 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if bin_file is not None:
             self.open_file(file=bin_file)
 
-    def open_file(self, *args, file=None):
+    def open_file_live(self, *args, **kwargs):
+        self.open_file(*args, live=True, **kwargs)
+
+    def open_file(self, *args, live=False, file=None):
         if file is None:
             file, _ = QtWidgets.QFileDialog.getOpenFileName(
                 parent=self, caption='Select Raw electrophysiology recording',
@@ -63,8 +67,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             return
         file = Path(file)
         self.settings.setValue("bin_file_path", str(file.parent))
+        ReaderClass = spikeglx.Reader if not live else spikeglx.ReaderLive
         try:
-            self.sr = spikeglx.Reader(file)
+            self.sr = ReaderClass(file)
         except AssertionError:
             self.sr = spikeglx.Reader(file, dtype='int16', nc=384, fs=30000, ns=file.stat().st_size / 384 / 2)
         # enable and set slider

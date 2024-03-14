@@ -126,7 +126,7 @@
      <x>0</x>
      <y>0</y>
      <width>785</width>
-     <height>22</height>
+     <height>24</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">
@@ -134,6 +134,7 @@
      <string>File</string>
     </property>
     <addaction name="actionopen"/>
+    <addaction name="actionopen_live_recording"/>
    </widget>
    <addaction name="menuFile"/>
   </widget>
@@ -141,6 +142,11 @@
   <action name="actionopen">
    <property name="text">
     <string>open</string>
+   </property>
+  </action>
+  <action name="actionopen_live_recording">
+   <property name="text">
+    <string>open live recording</string>
    </property>
   </action>
  </widget>
