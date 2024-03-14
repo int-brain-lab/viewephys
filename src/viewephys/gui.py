@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pandas as pd
 import numpy as np
 import scipy.signal
 import pyqtgraph as pg
@@ -15,6 +16,7 @@ from easyqc.gui import EasyQC
 T_SCALAR = 1e3  # defaults ms for user side
 A_SCALAR = 1e6  # defaults uV for user side
 NSAMP_CHUNK = 10000  # window length in samples
+N_SAMPLES_INIT = 2000  # number of samples in the manual pick array
 
 SNS_PALETTE = [
     (0.12156862745098039, 0.4666666666666667, 0.7058823529411765),
@@ -114,10 +116,18 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
 
 class EphysViewer(EasyQC):
+    keyPressed = QtCore.pyqtSignal(int)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.ctrl.model.picks = {'sample': np.array([]), 'trace': np.array([]), 'amp': np.array([])}  # TODO ADD CLUSTERS
+        self.ctrl.model.picks = pd.DataFrame({
+            'sample': np.zeros(N_SAMPLES_INIT, dtype=np.int32),
+            'trace': np.zeros(N_SAMPLES_INIT, dtype=np.int32) * -1,
+            'amp': np.zeros(N_SAMPLES_INIT, dtype=np.int32),
+            'group': np.zeros(N_SAMPLES_INIT, dtype=np.int32),
+        })
+        self.ctrl.model.pick_index = 0
+        self.ctrl.model.pick_group = 0
         self.menufile.setEnabled(True)
         self.settings = QtCore.QSettings('int-brain-lab', 'EphysViewer')
         self.header_curves = {}
@@ -181,8 +191,22 @@ class EphysViewer(EasyQC):
         # disable the picking
         if self.action_pick.isChecked():
             self.viewBox_seismic.scene().sigMouseClicked.connect(self.mouseClickPickingEvent)
+            self.keyPressed.connect(self.on_key_picking_mode)
         else:
             self.viewBox_seismic.scene().sigMouseClicked.disconnect(self.mouseClickPickingEvent)
+            self.keyPressed.disconnect(self.on_key_picking_mode)
+
+    def keyPressEvent(self, event):
+        super(EphysViewer, self).keyPressEvent(event)
+        self.keyPressed.emit(event.key())
+
+    def on_key_picking_mode(self, key):
+        """
+        When the pick action is enabled this is triggered on key press
+        """
+        match key:
+            case QtCore.Qt.Key.Key_Space:
+                self.ctrl.model.pick_group += 1
 
     def mouseClickPickingEvent(self, event):
         """
@@ -190,42 +214,51 @@ class EphysViewer(EasyQC):
         - left button click sets a point
         - shift + left button removes a point
         - control + left does not wrap on maximum around pick
+        - space increments the group number
         """
+
+        if event.buttons() == QtCore.Qt.RightButton:
+            self.ctrl.model.pick_group += 1
+        if event.buttons() != QtCore.Qt.LeftButton:
+            return
         TR_RANGE = 3
         S_RANGE = int(0.5 / self.ctrl.model.si)
         qxy = self.imageItem_seismic.mapFromScene(event.scenePos())
         s, tr = (qxy.x(), qxy.y())
         # if event.buttons() == QtCore.Qt.MiddleButton:
-        if event.buttons() == QtCore.Qt.LeftButton:
-            if event.modifiers() == QtCore.Qt.ShiftModifier:
-                iclose = np.where(np.logical_and(
-                    np.abs(self.ctrl.model.picks['sample'] - s) <= (S_RANGE + 1),
-                    np.abs(self.ctrl.model.picks['trace'] - tr) <= (TR_RANGE + 1)
-                ))[0]
-                self.ctrl.model.picks = {k: np.delete(self.ctrl.model.picks[k], iclose) for k in self.ctrl.model.picks}
-            else:
-                if event.modifiers() == QtCore.Qt.ControlModifier:
-                    tmax, xmax = (int(round(s)), int(round(tr)))
-
-                else:
-                    xscale = np.arange(-TR_RANGE, TR_RANGE + 1) + np.round(tr).astype(np.int32)
-                    tscale = np.arange(-S_RANGE, S_RANGE + 1) + np.round(s).astype(np.int32)
-                    ix = slice(xscale[0], xscale[-1] + 1)
-                    it = slice(tscale[0], tscale[-1] + 1)
-
-                    out_of_tr_range = xscale[0] < 0 or xscale[-1] > (self.ctrl.model.ntr - 1)
-                    out_of_time_range = tscale[0] < 0 or tscale[-1] > (self.ctrl.model.ns - 1)
-
-                    if out_of_time_range or out_of_tr_range:
-                        print(xscale, tscale)
-                        return
-                    tmax, xmax = np.unravel_index(np.argmax(np.abs(self.ctrl.model.data[it, ix])),
-                                                  (S_RANGE * 2 + 1, TR_RANGE * 2 + 1))
-                    tmax, xmax = (tscale[tmax], xscale[xmax])
-
-                self.ctrl.model.picks['sample'] = np.r_[self.ctrl.model.picks['sample'], tmax]
-                self.ctrl.model.picks['trace'] = np.r_[self.ctrl.model.picks['trace'], xmax]
-                self.ctrl.model.picks['amp'] = np.r_[self.ctrl.model.picks['amp'], self.ctrl.model.data[tmax, xmax]]
+        match event.modifiers():
+            case QtCore.Qt.KeyboardModifier.ShiftModifier:
+                    iclose = np.where(np.logical_and(
+                        np.abs(self.ctrl.model.picks['sample'] - s) <= (S_RANGE + 1),
+                        np.abs(self.ctrl.model.picks['trace'] - tr) <= (TR_RANGE + 1)
+                    ))[0]
+                    self.ctrl.model.picks.drop(iclose, inplace=True)
+                    self.ctrl.model.pick_index -= iclose.size
+                    return
+            case QtCore.Qt.ControlModifier:
+                # the control modifier prevents wrapping around the maximum number of picks
+                tmax, xmax = (int(round(s)), int(round(tr)))
+                # this is the automatic wrapping around the maximum number of picks
+            case _:
+                xscale = np.arange(-TR_RANGE, TR_RANGE + 1) + np.round(tr).astype(np.int32)
+                tscale = np.arange(-S_RANGE, S_RANGE + 1) + np.round(s).astype(np.int32)
+                ix = slice(xscale[0], xscale[-1] + 1)
+                it = slice(tscale[0], tscale[-1] + 1)
+                out_of_tr_range = xscale[0] < 0 or xscale[-1] > (self.ctrl.model.ntr - 1)
+                out_of_time_range = tscale[0] < 0 or tscale[-1] > (self.ctrl.model.ns - 1)
+                if out_of_time_range or out_of_tr_range:
+                    print(xscale, tscale)
+                    return
+                tmax, xmax = np.unravel_index(np.argmax(np.abs(self.ctrl.model.data[it, ix])),
+                                              (S_RANGE * 2 + 1, TR_RANGE * 2 + 1))
+                tmax, xmax = (tscale[tmax], xscale[xmax])
+        # we add the spike to the dataframe
+        i = self.ctrl.model.pick_index
+        self.ctrl.model.picks.at[i, 'sample'] = tmax
+        self.ctrl.model.picks.at[i, 'trace'] = xmax
+        self.ctrl.model.picks.at[i, 'amp'] = self.ctrl.model.data[tmax, xmax]
+        self.ctrl.model.picks.at[i, 'group'] = self.ctrl.model.pick_group
+        self.ctrl.model.pick_index += 1
         # updates scatter plot
         self.ctrl.add_scatter(self.ctrl.model.picks['sample'] * self.ctrl.model.si,
                               self.ctrl.model.picks['trace'],
@@ -239,8 +272,9 @@ class EphysViewer(EasyQC):
         """
         self.plotItem_seismic.grab().save(filename)
 
+
 def viewephys(data, fs, channels=None, br=None, title='ephys', t0=0, t_scalar=T_SCALAR, a_scalar=A_SCALAR,
-              colormap=None):
+              colormap=None) -> EphysViewer:
     """
     :param data: [nc, ns]
     :param fs:

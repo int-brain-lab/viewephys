@@ -16,10 +16,23 @@ This is compatible with the [IBL environment](https://github.com/int-brain-lab/i
 
 Otherwise, you can create a new environment as such:
 ```shell
-conda create -n viewephys python=3.9
+conda create -n viewephys python=3.12
 conda activate viewephys
 ```
 And then follow the install instructions above.
+
+## Controls
+- `ctrl + z`: -3dB gain
+- `ctrl + a`: +3dB gain
+- `ctrl + p`: in multi-windows mode, link the displays (pan, zoom and gain)
+
+### Pick spikes
+When the picking mode is enabled (menu pick)
+- left button click sets a point
+- shift + left button removes a point
+- control + left does not wrap on maximum around pick
+- space increments the spike group number
+
 
 ## Examples
 
