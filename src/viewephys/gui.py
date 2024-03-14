@@ -67,7 +67,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             return
         file = Path(file)
         self.settings.setValue("bin_file_path", str(file.parent))
-        ReaderClass = spikeglx.Reader if not live else spikeglx.ReaderLive
+        ReaderClass = spikeglx.Reader if not live else spikeglx.OnlineReader
         try:
             self.sr = ReaderClass(file)
         except AssertionError:
