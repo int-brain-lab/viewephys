@@ -8,7 +8,7 @@ from PyQt5 import QtGui, QtWidgets, QtCore, uic
 
 import spikeglx
 from neuropixel import trace_header
-from neurodsp import voltage
+from ibldsp import voltage
 from iblutil.numerical import ismember
 import easyqc.qt
 from easyqc.gui import EasyQC

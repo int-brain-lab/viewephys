@@ -15,8 +15,8 @@ from brainbox.io.spikeglx import Streamer
 import one.alf.io as alfio
 from one.alf.files import get_session_path
 import spikeglx
-from neurodsp import voltage, utils
-from ibllib.atlas import BrainRegions
+from ibldsp import voltage, utils
+from iblatlas import BrainRegions
 
 from viewephys.gui import viewephys, SNS_PALETTE
 
