@@ -18,6 +18,8 @@ A_SCALAR = 1e6  # defaults uV for user side
 NSAMP_CHUNK = 10000  # window length in samples
 N_SAMPLES_INIT = 2000  # number of samples in the manual pick array
 
+PICK_COLOR = (0, 255, 255)
+
 SNS_PALETTE = [
     (0.12156862745098039, 0.4666666666666667, 0.7058823529411765),
     (1.0, 0.4980392156862745, 0.054901960784313725),
@@ -267,7 +269,7 @@ class EphysViewer(EasyQC):
         # updates scatter plot
         self.ctrl.add_scatter(self.ctrl.model.picks['sample'] * self.ctrl.model.si,
                               self.ctrl.model.picks['trace'],
-                              label='_picks', rgb=(0, 255, 255))
+                              label='_picks', rgb=PICK_COLOR)
 
     def save_current_plot(self, filename):
         """
