@@ -5,7 +5,8 @@ import pandas as pd
 ps = PickSpikes()
 DEFAULT_DF_COLUMNS = ['sample', 'trace', 'amp', 'group']
 
-def test_init_df(ps):
+
+def test_init_df():
     df = ps.init_df(nrow=0)
     # Check size
     np.testing.assert_equal(df.shape[0], 0)
@@ -56,7 +57,8 @@ def test_add_spike():
     df2 = ps.new_row_frompick(sample=3, trace=2, amp=3, group=5)
     df = pd.concat([df1, df2])
     df = df.reset_index(drop=True)
-    ps.add_spike(new_row=df2, df=df1)
+    ps.update_pick(df1)
+    ps.add_spike(new_row=df2)
     # Test
     pd.testing.assert_frame_equal(ps.picks, df)
     np.testing.assert_(ps.pick_index == 2)

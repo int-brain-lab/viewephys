@@ -124,7 +124,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
 class PickSpikes():
 
-    def __int__(self):
+    def __init__(self):
         default_df = self.init_df()
         self.update_pick(default_df)
 
@@ -166,10 +166,8 @@ class PickSpikes():
         new_row['group'] = group
         return new_row
 
-    def add_spike(self, new_row, df=None):
-        if df is None:
-            # Create new empty dataframe
-            df = self.load_df()
+    def add_spike(self, new_row):
+        df = self.picks
         # Check columns of new row
         indxmissing = np.where(~df.columns.isin(new_row.columns))[0]
         if len(indxmissing) > 0:
@@ -187,7 +185,7 @@ class PickSpikes():
             self.update_pick(df_updated)
 
 
-    def indx_remove(self, sample, trace, s_range=0.5 * 30000, tr_range=3):
+    def indx_select(self, sample, trace, s_range=0.5 * 30000, tr_range=3):
         iclose = np.where(np.logical_and(
             np.abs(self.picks['sample'] - sample) <= (s_range + 1),
             np.abs(self.picks['trace'] - trace) <= (tr_range + 1)
@@ -200,6 +198,7 @@ class EphysViewer(EasyQC):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        self.ctrl.model.pickspikes = PickSpikes()
         self.menufile.setEnabled(True)
         self.settings = QtCore.QSettings('int-brain-lab', 'EphysViewer')
         self.header_curves = {}
@@ -290,7 +289,7 @@ class EphysViewer(EasyQC):
         """
 
         if event.buttons() == QtCore.Qt.RightButton:
-            self.ctrl.model.pick_group += 1
+            self.ctrl.model.pickspikes.pick_group += 1  # TODO check logic of incrementing here
         if event.buttons() != QtCore.Qt.LeftButton:
             return
         TR_RANGE = 3
@@ -298,20 +297,21 @@ class EphysViewer(EasyQC):
         qxy = self.imageItem_seismic.mapFromScene(event.scenePos())
         s, tr = (qxy.x(), qxy.y())
         # if event.buttons() == QtCore.Qt.MiddleButton:
-        match event.modifiers():
+        match event.modifiers():  # upon clicking:
+            # --- Remove a spike when shift key is pressed
             case QtCore.Qt.KeyboardModifier.ShiftModifier:
-                tmax, xmax = (None, None)
-                iclose = np.where(np.logical_and(
-                    np.abs(self.ctrl.model.picks['sample'] - s) <= (S_RANGE + 1),
-                    np.abs(self.ctrl.model.picks['trace'] - tr) <= (TR_RANGE + 1)
-                ))[0]
-                self.ctrl.model.picks.drop(iclose, inplace=True)
-                self.ctrl.model.pick_index -= iclose.size
+                i_remv = self.ctrl.model.pickspikes.indx_select(
+                    sample=s, trace=tr, s_range=S_RANGE, tr_range=TR_RANGE)
+                self.ctrl.model.pickspikes.remove_spike(i_remv)
+                tmax = None
+
+            # --- Add a spike
             case QtCore.Qt.ControlModifier:
-                # the control modifier prevents wrapping around the maximum number of picks
+                # the control modifier prevents wrapping around the nearby maximal voltage
                 tmax, xmax = (int(round(s)), int(round(tr)))
-                # this is the automatic wrapping around the maximum number of picks
+
             case _:
+                # if no key is pressed and click, automatic wrapping around the nearby maximal voltage
                 xscale = np.arange(-TR_RANGE, TR_RANGE + 1) + np.round(tr).astype(np.int32)
                 tscale = np.arange(-S_RANGE, S_RANGE + 1) + np.round(s).astype(np.int32)
                 ix = slice(xscale[0], xscale[-1] + 1)
@@ -324,17 +324,19 @@ class EphysViewer(EasyQC):
                 tmax, xmax = np.unravel_index(np.argmax(np.abs(self.ctrl.model.data[it, ix])),
                                               (S_RANGE * 2 + 1, TR_RANGE * 2 + 1))
                 tmax, xmax = (tscale[tmax], xscale[xmax])
-        if tmax is not None:
+
+        if tmax is not None:  # When spike is added
             # we add the spike to the dataframe
-            i = self.ctrl.model.pick_index
-            self.ctrl.model.picks.at[i, 'sample'] = tmax
-            self.ctrl.model.picks.at[i, 'trace'] = xmax
-            self.ctrl.model.picks.at[i, 'amp'] = self.ctrl.model.data[tmax, xmax]
-            self.ctrl.model.picks.at[i, 'group'] = self.ctrl.model.pick_group
-            self.ctrl.model.pick_index += 1
+            amp = self.ctrl.model.data[tmax, xmax]
+            group = 0  # TODO group
+            # Create new row
+            new_row = self.ctrl.model.pickspikes.new_row_frompick(
+                sample=tmax, trace=xmax, amp=amp, group=group)
+            self.ctrl.model.pickspikes.add_spike(new_row=new_row)
+
         # updates scatter plot
-        self.ctrl.add_scatter(self.ctrl.model.picks['sample'] * self.ctrl.model.si,
-                              self.ctrl.model.picks['trace'],
+        self.ctrl.add_scatter(self.ctrl.model.pickspikes.picks['sample'] * self.ctrl.model.si,
+                              self.ctrl.model.pickspikes.picks['trace'],
                               label='_picks', rgb=PICK_COLOR)
 
     def save_current_plot(self, filename):
