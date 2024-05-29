@@ -122,19 +122,64 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.close()
 
 
+class PickSpikes():
+
+    def __int__(self):
+        self.load_df()
+
+
+    def init_df(self, nrow=N_SAMPLES_INIT):
+        init_df = pd.DataFrame({
+            'sample': np.zeros(nrow, dtype=np.int32),
+            'trace': np.zeros(nrow, dtype=np.int32) * -1,
+            'amp': np.zeros(nrow, dtype=np.int32),
+            'group': np.zeros(nrow, dtype=np.int32),
+        })
+        return init_df
+
+    def load_df(self, df=None):
+        '''
+        Load a dataframe that contains already picked spikes, create an empty one if not
+        :return:
+        '''
+        default_df = self.init_df()
+
+        if df is None:
+            self.picks = default_df
+            self.pick_index = 0  # Last index of spike picked == len of df table
+            self.pick_group = 0  # Last group created
+        else:
+            if isinstance(df, pd.DataFrame):
+                # check all keys are in
+                indxmissing = np.where(~df.columns.isin(default_df.columns))[0]
+                if len(indxmissing) > 0:
+                    raise ValueError(f'df does not contain column {default_df.columns[indxmissing]}')
+                # Get input df data into large df
+                # If N row of input df is larger than default, create out_df of N row plus INIT values
+                if df.shape[0] >= default_df.shape[0]:
+                    out_df = pd.concat([df, self.init_df(nrow=N_SAMPLES_INIT)])
+                else:
+                    out_df = pd.concat([df, self.init_df(nrow=N_SAMPLES_INIT-df.shape[0])])
+                return out_df
+
+            else:
+                raise ValueError('df input is not pd.DataFrame')
+
+
+
+    def add_spike(self):
+        pass
+
+    def remove_spike(self):
+        pass
+
+
 class EphysViewer(EasyQC):
     keyPressed = QtCore.pyqtSignal(int)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.ctrl.model.picks = pd.DataFrame({
-            'sample': np.zeros(N_SAMPLES_INIT, dtype=np.int32),
-            'trace': np.zeros(N_SAMPLES_INIT, dtype=np.int32) * -1,
-            'amp': np.zeros(N_SAMPLES_INIT, dtype=np.int32),
-            'group': np.zeros(N_SAMPLES_INIT, dtype=np.int32),
-        })
-        self.ctrl.model.pick_index = 0
-        self.ctrl.model.pick_group = 0
+
         self.menufile.setEnabled(True)
         self.settings = QtCore.QSettings('int-brain-lab', 'EphysViewer')
         self.header_curves = {}
@@ -235,13 +280,13 @@ class EphysViewer(EasyQC):
         # if event.buttons() == QtCore.Qt.MiddleButton:
         match event.modifiers():
             case QtCore.Qt.KeyboardModifier.ShiftModifier:
-                    iclose = np.where(np.logical_and(
-                        np.abs(self.ctrl.model.picks['sample'] - s) <= (S_RANGE + 1),
-                        np.abs(self.ctrl.model.picks['trace'] - tr) <= (TR_RANGE + 1)
-                    ))[0]
-                    self.ctrl.model.picks.drop(iclose, inplace=True)
-                    self.ctrl.model.pick_index -= iclose.size
-                    return
+                tmax, xmax = (None, None)
+                iclose = np.where(np.logical_and(
+                    np.abs(self.ctrl.model.picks['sample'] - s) <= (S_RANGE + 1),
+                    np.abs(self.ctrl.model.picks['trace'] - tr) <= (TR_RANGE + 1)
+                ))[0]
+                self.ctrl.model.picks.drop(iclose, inplace=True)
+                self.ctrl.model.pick_index -= iclose.size
             case QtCore.Qt.ControlModifier:
                 # the control modifier prevents wrapping around the maximum number of picks
                 tmax, xmax = (int(round(s)), int(round(tr)))
@@ -259,13 +304,14 @@ class EphysViewer(EasyQC):
                 tmax, xmax = np.unravel_index(np.argmax(np.abs(self.ctrl.model.data[it, ix])),
                                               (S_RANGE * 2 + 1, TR_RANGE * 2 + 1))
                 tmax, xmax = (tscale[tmax], xscale[xmax])
-        # we add the spike to the dataframe
-        i = self.ctrl.model.pick_index
-        self.ctrl.model.picks.at[i, 'sample'] = tmax
-        self.ctrl.model.picks.at[i, 'trace'] = xmax
-        self.ctrl.model.picks.at[i, 'amp'] = self.ctrl.model.data[tmax, xmax]
-        self.ctrl.model.picks.at[i, 'group'] = self.ctrl.model.pick_group
-        self.ctrl.model.pick_index += 1
+        if tmax is not None:
+            # we add the spike to the dataframe
+            i = self.ctrl.model.pick_index
+            self.ctrl.model.picks.at[i, 'sample'] = tmax
+            self.ctrl.model.picks.at[i, 'trace'] = xmax
+            self.ctrl.model.picks.at[i, 'amp'] = self.ctrl.model.data[tmax, xmax]
+            self.ctrl.model.picks.at[i, 'group'] = self.ctrl.model.pick_group
+            self.ctrl.model.pick_index += 1
         # updates scatter plot
         self.ctrl.add_scatter(self.ctrl.model.picks['sample'] * self.ctrl.model.si,
                               self.ctrl.model.picks['trace'],
