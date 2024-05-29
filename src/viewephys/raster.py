@@ -16,7 +16,7 @@ import one.alf.io as alfio
 from one.alf.files import get_session_path
 import spikeglx
 from ibldsp import voltage, utils
-from iblatlas import BrainRegions
+from iblatlas.atlas import BrainRegions
 
 from viewephys.gui import viewephys, SNS_PALETTE
 
@@ -65,6 +65,7 @@ class ProbeData:
     channels: Union[dict, pd.DataFrame] = field(default_factory=dict)
     trials: Union[dict, pd.DataFrame] = field(default_factory=dict)
     sr: Union[spikeglx.Reader, Streamer, str, Path] = None
+
     def __post_init__(self):
         if isinstance(self.sr, str) or isinstance(self.sr, Path):
             self.sr = spikeglx.Reader(self.ap_file)
