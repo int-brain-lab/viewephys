@@ -125,7 +125,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 class PickSpikes():
 
     def __int__(self):
-        self.load_df()
+        default_df = self.init_df()
+        self.update_pick(default_df)
 
     def init_df(self, nrow=0):
         init_df = pd.DataFrame({
@@ -141,24 +142,21 @@ class PickSpikes():
         self.pick_index = df.shape[0]  # Last index of spike picked (== len of df table)
         self.pick_group = df['group'].max()  # Last group created
 
-    def load_df(self, df=None):
+    def load_df(self, df):
         '''
-        Load a dataframe that contains already picked spikes, create an empty one if not
+        Load a dataframe that contains already picked spikes
         :return:
         '''
         default_df = self.init_df()
 
-        if df is None:
-            self.update_pick(default_df)
+        if isinstance(df, pd.DataFrame):
+            # check all keys are in
+            indxmissing = np.where(~df.columns.isin(default_df.columns))[0]
+            if len(indxmissing) > 0:
+                raise ValueError(f'df does not contain column {default_df.columns[indxmissing]}')
+            self.update_pick(df)
         else:
-            if isinstance(df, pd.DataFrame):
-                # check all keys are in
-                indxmissing = np.where(~df.columns.isin(default_df.columns))[0]
-                if len(indxmissing) > 0:
-                    raise ValueError(f'df does not contain column {default_df.columns[indxmissing]}')
-                self.update_pick(df)
-            else:
-                raise ValueError('df input is not pd.DataFrame')
+            raise ValueError('df input is not pd.DataFrame')
 
     def new_row_frompick(self, sample=None, trace=None, amp=None, group=None):
         new_row = self.init_df(nrow=1)
@@ -178,16 +176,16 @@ class PickSpikes():
             raise ValueError(f'new_row does not contain column {df.columns[indxmissing]}')
         # Append new row
         df_updated = pd.concat([df, new_row])
-        df_updated = df_updated.reset_index()
+        df_updated = df_updated.reset_index(drop=True)
         self.update_pick(df_updated)
 
-    def remove_spike(self, df, indx_remove):
-        if df.shape[0] > 0:
-            df_updated = df.drop(indx_remove, inplace=True)
-        else:  # Empty
-            df_updated = df.copy()
-        df_updated = df_updated.reset_index()
-        self.update_pick(df_updated)
+    def remove_spike(self, indx_remove):
+        df = self.picks
+        if df.shape[0] > 0 and len(indx_remove) > 0:  # Update only if non-empty
+            df_updated = df.drop(indx_remove).copy()
+            df_updated = df_updated.reset_index(drop=True)
+            self.update_pick(df_updated)
+
 
     def indx_remove(self, sample, trace, s_range=0.5 * 30000, tr_range=3):
         iclose = np.where(np.logical_and(
