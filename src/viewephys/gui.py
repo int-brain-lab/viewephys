@@ -127,8 +127,7 @@ class PickSpikes():
     def __int__(self):
         self.load_df()
 
-
-    def init_df(self, nrow=N_SAMPLES_INIT):
+    def init_df(self, nrow=0):
         init_df = pd.DataFrame({
             'sample': np.zeros(nrow, dtype=np.int32),
             'trace': np.zeros(nrow, dtype=np.int32) * -1,
@@ -136,6 +135,11 @@ class PickSpikes():
             'group': np.zeros(nrow, dtype=np.int32),
         })
         return init_df
+
+    def update_pick(self, df):
+        self.picks = df
+        self.pick_index = df.index[-1]  # Last index of spike picked (== len of df table-1
+        self.pick_group = df['group'].max()  # Last group created
 
     def load_df(self, df=None):
         '''
@@ -145,34 +149,52 @@ class PickSpikes():
         default_df = self.init_df()
 
         if df is None:
-            self.picks = default_df
-            self.pick_index = 0  # Last index of spike picked == len of df table
-            self.pick_group = 0  # Last group created
+            self.update_pick(default_df)
         else:
             if isinstance(df, pd.DataFrame):
                 # check all keys are in
                 indxmissing = np.where(~df.columns.isin(default_df.columns))[0]
                 if len(indxmissing) > 0:
                     raise ValueError(f'df does not contain column {default_df.columns[indxmissing]}')
-                # Get input df data into large df
-                # If N row of input df is larger than default, create out_df of N row plus INIT values
-                if df.shape[0] >= default_df.shape[0]:
-                    out_df = pd.concat([df, self.init_df(nrow=N_SAMPLES_INIT)])
-                else:
-                    out_df = pd.concat([df, self.init_df(nrow=N_SAMPLES_INIT-df.shape[0])])
-                return out_df
-
+                self.update_pick(df)
             else:
                 raise ValueError('df input is not pd.DataFrame')
 
+    def new_row_frompick(self, sample=None, trace=None, amp=None, group=None):
+        new_row = self.init_df(nrow=1)
+        new_row['sample'] = sample
+        new_row['trace'] = trace
+        new_row['amp'] = amp
+        new_row['group'] = group
+        return new_row
 
+    def add_spike(self, new_row, df=None):
+        if df is None:
+            # Create new empty dataframe
+            df = self.load_df()
+        # Check columns of new row
+        indxmissing = np.where(~df.columns.isin(new_row.columns))[0]
+        if len(indxmissing) > 0:
+            raise ValueError(f'new_row does not contain column {df.columns[indxmissing]}')
+        # Append new row
+        df_updated = pd.concat([df, new_row])
+        df_updated = df_updated.reset_index()
+        self.update_pick(df_updated)
 
-    def add_spike(self):
-        pass
+    def remove_spike(self, df, indx_remove):
+        if df.shape[0] > 0:
+            df_updated = df.drop(indx_remove, inplace=True)
+        else:  # Empty
+            df_updated = df.copy()
+        df_updated = df_updated.reset_index()
+        self.update_pick(df_updated)
 
-    def remove_spike(self):
-        pass
-
+    def indx_remove(self, sample, trace, s_range=0.5 * 30000, tr_range=3):
+        iclose = np.where(np.logical_and(
+            np.abs(self.picks['sample'] - sample) <= (s_range + 1),
+            np.abs(self.picks['trace'] - trace) <= (tr_range + 1)
+        ))[0]
+        return iclose
 
 class EphysViewer(EasyQC):
     keyPressed = QtCore.pyqtSignal(int)
