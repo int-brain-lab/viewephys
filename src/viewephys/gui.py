@@ -138,7 +138,7 @@ class PickSpikes():
 
     def update_pick(self, df):
         self.picks = df
-        self.pick_index = df.index[-1]  # Last index of spike picked (== len of df table-1
+        self.pick_index = df.shape[0]  # Last index of spike picked (== len of df table)
         self.pick_group = df['group'].max()  # Last group created
 
     def load_df(self, df=None):

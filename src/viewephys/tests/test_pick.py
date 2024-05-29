@@ -1,5 +1,6 @@
 from viewephys.gui import PickSpikes
 import numpy as np
+import pandas as pd
 
 ps = PickSpikes()
 DEFAULT_DF_COLUMNS = ['sample', 'trace', 'amp', 'group']
@@ -27,4 +28,29 @@ def test_new_row_frompick():
     np.testing.assert_(new_row['group'][0] == 4)
 
 
+def test_update_pick():
+    # Create empty df
+    df = ps.init_df(nrow=0)
+    # Update
+    ps.update_pick(df)
+    # Test
+    pd.testing.assert_frame_equal(ps.picks, df)
+    np.testing.assert_(ps.pick_index == 0)
+    np.testing.assert_(np.isnan(ps.pick_group))
+
+    # ----
+    # Create filled df (2 row2)
+    df1 = ps.new_row_frompick(sample=1, trace=2, amp=3, group=4)
+    df2 = ps.new_row_frompick(sample=3, trace=2, amp=3, group=5)
+    df = pd.concat([df1, df2])
+    # Update
+    ps.update_pick(df)
+    # Test
+    pd.testing.assert_frame_equal(ps.picks, df)
+    np.testing.assert_(ps.pick_index == 2)
+    np.testing.assert_(ps.pick_group == 5)
+
+def test_add_spike():
+    new_row = ps.new_row_frompick(sample=1, trace=2, amp=3, group=4)
+    ps.add_spike(new_row, df=None)
 
