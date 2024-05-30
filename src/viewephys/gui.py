@@ -111,8 +111,10 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if not self.cbs[k].isChecked():
                 continue
             if k == 'destripe':
-                data = fcn_destripe(x=data, fs=self.sr.fs, channel_labels=True, h=self.sr.geometry, neuropixel_version=self.sr.major_version)
-            self.viewers[k] = viewephys(data, self.sr.fs, channels=self.sr.geometry, title=k, t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
+                data = fcn_destripe(x=data, fs=self.sr.fs, channel_labels=True, h=self.sr.geometry,
+                                    neuropixel_version=self.sr.major_version)
+            self.viewers[k] = viewephys(data, self.sr.fs, channels=self.sr.geometry, title=k,
+                                        t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
 
     def closeEvent(self, event):
         for k in self.viewers:
@@ -120,6 +122,75 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if ev is not None:
                 ev.close()
         self.close()
+
+# =------
+
+class SpikeInterfaceViewer(QtWidgets.QMainWindow):
+    def __init__(self, recording, *args, **kwargs):
+        """
+        :param parent:
+        :param sr: ibllib.io.spikeglx.Reader instance
+        """
+        super(SpikeInterfaceViewer, self).__init__(*args, *kwargs)
+        self.settings = QtCore.QSettings('int-brain-lab', 'SpikeInterfaceViewer')
+        uic.loadUi(Path(__file__).parent.joinpath('nav_file.ui'), self)
+        self.setWindowIcon(QtGui.QIcon(str(Path(__file__).parent.joinpath('viewephys.svg'))))
+        self.horizontalSlider.setMinimum(0)
+        self.horizontalSlider.setSingleStep(1)
+        self.horizontalSlider.setTickInterval(10)
+        self.horizontalSlider.sliderReleased.connect(self.on_horizontalSliderReleased)
+        self.horizontalSlider.valueChanged.connect(self.on_horizontalSliderValueChanged)
+        self.label_smin.setText('0')
+        self.show()
+        self.viewers = {'recording': None}
+        # self.cbs = {'butterworth': self.cb_butterworth_ap, 'destripe': self.cb_destripe_ap}
+        self.recording = recording
+        self.set_recording()
+
+    def set_recording(self, *args, **kwargs):
+        # enable and set slider
+        num_samples = self.recording.get_num_samples()
+        fs = self.recording.sampling_frequency
+        total_duration = self.recording.get_total_duration()
+        num_channel = self.recording.get_num_channels()
+        self.horizontalSlider.setMaximum(int(np.floor(num_samples / NSAMP_CHUNK)))
+        tmax = np.floor(num_samples / NSAMP_CHUNK) * NSAMP_CHUNK / fs
+
+        self.label_smax.setText(f"{tmax:0.2f}s")
+        tlabel = f'{total_duration} seconds long \n' \
+                 f'{fs} Hz Sampling Frequency \n' \
+                 f'{num_channel} Channels'
+        self.label.setText(tlabel)
+        self.horizontalSlider.setValue(0)
+        self.horizontalSlider.setEnabled(True)
+        self.on_horizontalSliderReleased()
+
+    def on_horizontalSliderValueChanged(self):
+        tcur = self.horizontalSlider.value() * NSAMP_CHUNK / self.recording.sampling_frequency
+        self.label_sval.setText(f"{tcur:0.2f}s")
+
+    def on_horizontalSliderReleased(self):
+        first = int(float(self.horizontalSlider.value()) * NSAMP_CHUNK)
+        last = first + int(NSAMP_CHUNK)
+        data = self.recording.get_traces(start_frame=first, end_frame=last).T
+
+        t0 = first / self.recording.sampling_frequency * 0
+        # TODO if t0 is not zero the sliders bugs and does not lead to display change (empty)
+        print(f'{first}, {last} - data: {data.shape} - {data[0, 0:10]}')
+
+        for k in self.viewers:
+            self.viewers[k] = viewephys(data, self.recording.sampling_frequency,
+                                        channels=None, title=k,
+                                        t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
+            # TODO send first in viewers
+    def closeEvent(self, event):
+        for k in self.viewers:
+            ev = self.viewers[k]
+            if ev is not None:
+                ev.close()
+        self.close()
+
+#-----
 
 
 class PickSpikes():
@@ -184,13 +255,18 @@ class PickSpikes():
             df_updated = df_updated.reset_index(drop=True)
             self.update_pick(df_updated)
 
-
     def indx_select(self, sample, trace, s_range=0.5 * 30000, tr_range=3):
         iclose = np.where(np.logical_and(
             np.abs(self.picks['sample'] - sample) <= (s_range + 1),
             np.abs(self.picks['trace'] - trace) <= (tr_range + 1)
         ))[0]
         return iclose
+
+    def save_picks(self, save_path):
+        self.picks.to_parquet(save_path.joinpath('picks.pqt'))
+        # TODO need to check that when changing the slide bar, the picks remain in memory
+        # TODO need to add column T0 (in sample from start), so as to get absolute samples
+
 
 class EphysViewer(EasyQC):
     keyPressed = QtCore.pyqtSignal(int)
