@@ -182,8 +182,8 @@ class SpikeInterfaceViewer(QtWidgets.QMainWindow):
             self.viewers[k] = viewephys(data, self.recording.sampling_frequency,
                                         channels=None, title=k,
                                         t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
+            self.viewers[k].current_sample0 = first
             self.viewers[k].update_pick_scatter()
-            # TODO send first in viewers
 
     def closeEvent(self, event):
         for k in self.viewers:
@@ -282,6 +282,7 @@ class EphysViewer(EasyQC):
         self.menufile.setEnabled(True)
         self.settings = QtCore.QSettings('int-brain-lab', 'EphysViewer')
         self.header_curves = {}
+        self.current_sample0 = 0
         # menus handling
         # menu pick
         self.menupick = self.menuBar().addMenu('&Pick')
@@ -360,9 +361,18 @@ class EphysViewer(EasyQC):
                 self.ctrl.model.pick_group += 1
 
     def update_pick_scatter(self):
-        # updates scatter plot
-        self.ctrl.add_scatter(self.ctrl.model.pickspikes.picks['sample'] * self.ctrl.model.si,
-                              self.ctrl.model.pickspikes.picks['trace'],
+
+        print(f"TEST: {self.current_sample0}")
+
+        # updates scatter plot with only picks from T0
+        df = self.ctrl.model.pickspikes.picks
+        df_local_picks = df.loc[df["sample0"] == self.current_sample0]
+        print(df)
+        print('-------')
+        print(df_local_picks)
+
+        self.ctrl.add_scatter(df_local_picks['sample'] * self.ctrl.model.si,
+                              df_local_picks['trace'],
                               label='_picks', rgb=PICK_COLOR)
 
     def mouseClickPickingEvent(self, event):
@@ -417,7 +427,7 @@ class EphysViewer(EasyQC):
             group = 0  # TODO group
             # Create new row
             new_row = self.ctrl.model.pickspikes.new_row_frompick(
-                sample=tmax, trace=xmax, amp=amp, group=group)
+                sample=tmax, trace=xmax, amp=amp, group=group, sample0=self.current_sample0)
             self.ctrl.model.pickspikes.add_spike(new_row=new_row)
 
         # updates scatter plot
