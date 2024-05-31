@@ -406,7 +406,8 @@ class EphysViewer(EasyQC):
             return
         TR_RANGE = 3
         S_RANGE = int(0.5 / self.ctrl.model.si)
-        print(f"HERE todo s_range {S_RANGE}")
+        # TODO modify s_range so it is scaled according to zoom,
+        #  otherwise can be hard to delete when zoomed out
         qxy = self.imageItem_seismic.mapFromScene(event.scenePos())
         s, tr = (qxy.x(), qxy.y())
         # if event.buttons() == QtCore.Qt.MiddleButton:
