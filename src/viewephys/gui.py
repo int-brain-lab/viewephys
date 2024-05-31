@@ -126,7 +126,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 # =------
 
 class SpikeInterfaceViewer(QtWidgets.QMainWindow):
-    def __init__(self, recording, *args, **kwargs):
+    def __init__(self, recording, save_path_picks=None, *args, **kwargs):
         """
         :param parent:
         :param sr: ibllib.io.spikeglx.Reader instance
@@ -145,6 +145,12 @@ class SpikeInterfaceViewer(QtWidgets.QMainWindow):
         self.viewers = {'recording': None}
         # self.cbs = {'butterworth': self.cb_butterworth_ap, 'destripe': self.cb_destripe_ap}
         self.recording = recording
+        # Set save path for picks
+        if save_path_picks is None:
+            save_path_picks = Path(__file__).parent.joinpath('picks.csv')  # This will save into the viewephys folder
+        elif save_path_picks.suffix != '.csv':
+            raise ValueError('Extension of save file must be .csv')
+        self.save_path_picks = save_path_picks
         self.set_recording()
 
     def set_recording(self, *args, **kwargs):
@@ -176,7 +182,6 @@ class SpikeInterfaceViewer(QtWidgets.QMainWindow):
 
         t0 = first / self.recording.sampling_frequency * 0
         # TODO if t0 is not zero the sliders bugs and does not lead to display change (empty)
-        print(f'{first}, {last} - data: {data.shape} - {data[0, 0:10]}')
 
         for k in self.viewers:
             self.viewers[k] = viewephys(data, self.recording.sampling_frequency,
@@ -184,6 +189,9 @@ class SpikeInterfaceViewer(QtWidgets.QMainWindow):
                                         t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
             self.viewers[k].current_sample0 = first
             self.viewers[k].update_pick_scatter()
+            # Propagate save path to each view
+            self.viewers[k].save_path_picks = self.save_path_picks
+
 
     def closeEvent(self, event):
         for k in self.viewers:
@@ -267,9 +275,8 @@ class PickSpikes():
         return iclose
 
     def save_picks(self, save_path):
-        self.picks.to_parquet(save_path.joinpath('picks.pqt'))
-        # TODO need to check that when changing the slide bar, the picks remain in memory
-        # TODO need to add column T0 (in sample from start), so as to get absolute samples
+        self.picks.to_csv(save_path)
+        # chose format CSV output
 
 
 class EphysViewer(EasyQC):
@@ -283,6 +290,7 @@ class EphysViewer(EasyQC):
         self.settings = QtCore.QSettings('int-brain-lab', 'EphysViewer')
         self.header_curves = {}
         self.current_sample0 = 0
+        self.save_path_picks = None
         # menus handling
         # menu pick
         self.menupick = self.menuBar().addMenu('&Pick')
@@ -359,17 +367,14 @@ class EphysViewer(EasyQC):
         match key:
             case QtCore.Qt.Key.Key_Space:
                 self.ctrl.model.pick_group += 1
+            case QtCore.Qt.Key.Key_S:
+                print(f"Saved picks to: {self.save_path_picks}")
+                self.ctrl.model.pickspikes.save_picks(self.save_path_picks)
 
     def update_pick_scatter(self):
-
-        print(f"TEST: {self.current_sample0}")
-
         # updates scatter plot with only picks from T0
         df = self.ctrl.model.pickspikes.picks
         df_local_picks = df.loc[df["sample0"] == self.current_sample0]
-        print(df)
-        print('-------')
-        print(df_local_picks)
 
         self.ctrl.add_scatter(df_local_picks['sample'] * self.ctrl.model.si,
                               df_local_picks['trace'],
