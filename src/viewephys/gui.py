@@ -182,7 +182,9 @@ class SpikeInterfaceViewer(QtWidgets.QMainWindow):
             self.viewers[k] = viewephys(data, self.recording.sampling_frequency,
                                         channels=None, title=k,
                                         t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
+            self.viewers[k].update_pick_scatter()
             # TODO send first in viewers
+
     def closeEvent(self, event):
         for k in self.viewers:
             ev = self.viewers[k]
@@ -357,6 +359,12 @@ class EphysViewer(EasyQC):
             case QtCore.Qt.Key.Key_Space:
                 self.ctrl.model.pick_group += 1
 
+    def update_pick_scatter(self):
+        # updates scatter plot
+        self.ctrl.add_scatter(self.ctrl.model.pickspikes.picks['sample'] * self.ctrl.model.si,
+                              self.ctrl.model.pickspikes.picks['trace'],
+                              label='_picks', rgb=PICK_COLOR)
+
     def mouseClickPickingEvent(self, event):
         """
         When the pick action is enabled this is triggered on mouse click
@@ -413,9 +421,7 @@ class EphysViewer(EasyQC):
             self.ctrl.model.pickspikes.add_spike(new_row=new_row)
 
         # updates scatter plot
-        self.ctrl.add_scatter(self.ctrl.model.pickspikes.picks['sample'] * self.ctrl.model.si,
-                              self.ctrl.model.pickspikes.picks['trace'],
-                              label='_picks', rgb=PICK_COLOR)
+        self.update_pick_scatter()
 
     def save_current_plot(self, filename):
         """
