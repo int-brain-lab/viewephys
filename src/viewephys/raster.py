@@ -15,7 +15,7 @@ from brainbox.io.spikeglx import Streamer
 import one.alf.io as alfio
 from one.alf.files import get_session_path
 import spikeglx
-from ibldsp import voltage, utils
+from ibldsp import voltage
 from iblatlas.atlas import BrainRegions
 
 from viewephys.gui import viewephys, SNS_PALETTE
@@ -181,9 +181,10 @@ class RasterView(QtWidgets.QMainWindow):
         sos = scipy.signal.butter(**butter_kwargs, output='sos')
         butt = scipy.signal.sosfiltfilt(sos, raw)
         destripe = voltage.destripe(raw, fs=self.data.sr.fs, channel_labels=True)
-        self.eqc_raw = viewephys(butt, self.data.sr.fs, channels=self.data.channels, br=self.data.br, title='butt', t0=t0, t_scalar=1)
-        self.eqc_des = viewephys(destripe, self.data.sr.fs, channels=self.data.channels, br=self.data.br, title='destripe', t0=t0, t_scalar=1)
-        stripes_noise = 20 * np.log10(np.median(utils.rms(butt - destripe)))
+        self.eqc_raw = viewephys(butt, self.data.sr.fs, channels=self.data.channels,
+                                 br=self.data.br, title='butt', t0=t0, t_scalar=1)
+        self.eqc_des = viewephys(destripe, self.data.sr.fs, channels=self.data.channels,
+                                 br=self.data.br, title='destripe', t0=t0, t_scalar=1)
         eqc_xrange = [t0 + tlen / 2 - 0.01, t0 + tlen / 2 + 0.01]
         self.eqc_des.viewBox_seismic.setXRange(*eqc_xrange)
         self.eqc_raw.viewBox_seismic.setXRange(*eqc_xrange)
