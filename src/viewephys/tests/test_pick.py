@@ -84,3 +84,8 @@ def test_remove_spike():
 
     ps.remove_spike(indx_remove=indx_remove)
     pd.testing.assert_frame_equal(ps.picks, df_test)
+
+
+def test_load_df():
+    df1 = ps.new_row_frompick()
+    ps.load_df(df1)  # check no raise

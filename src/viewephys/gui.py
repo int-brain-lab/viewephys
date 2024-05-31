@@ -167,9 +167,22 @@ class SpikeInterfaceViewer(QtWidgets.QMainWindow):
                  f'{fs} Hz Sampling Frequency \n' \
                  f'{num_channel} Channels'
         self.label.setText(tlabel)
-        self.horizontalSlider.setValue(0)
+        first = 0  # first sample
+        self.horizontalSlider.setValue(first)
         self.horizontalSlider.setEnabled(True)
         self.on_horizontalSliderReleased()
+
+        for k in self.viewers:
+            # Propagate save path to each view
+            self.viewers[k].save_path_picks = self.save_path_picks
+            self.viewers[k].current_sample0 = first
+            # TODO make sure picks df remain across views
+            # Load if exists
+            if self.save_path_picks.exists():
+                df = pd.read_csv(self.save_path_picks)
+                self.viewers[k].ctrl.model.pickspikes.load_df(df)
+                self.viewers[k].update_pick_scatter()
+
 
     def on_horizontalSliderValueChanged(self):
         tcur = self.horizontalSlider.value() * NSAMP_CHUNK / self.recording.sampling_frequency
@@ -189,8 +202,6 @@ class SpikeInterfaceViewer(QtWidgets.QMainWindow):
                                         t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
             self.viewers[k].current_sample0 = first
             self.viewers[k].update_pick_scatter()
-            # Propagate save path to each view
-            self.viewers[k].save_path_picks = self.save_path_picks
 
 
     def closeEvent(self, event):
@@ -233,7 +244,7 @@ class PickSpikes():
 
         if isinstance(df, pd.DataFrame):
             # check all keys are in
-            indxmissing = np.where(~df.columns.isin(default_df.columns))[0]
+            indxmissing = np.where(~default_df.columns.isin(df.columns))[0]
             if len(indxmissing) > 0:
                 raise ValueError(f'df does not contain column {default_df.columns[indxmissing]}')
             self.update_pick(df)
@@ -275,7 +286,7 @@ class PickSpikes():
         return iclose
 
     def save_picks(self, save_path):
-        self.picks.to_csv(save_path)
+        self.picks.to_csv(save_path, index=False)
         # chose format CSV output
 
 
@@ -395,6 +406,7 @@ class EphysViewer(EasyQC):
             return
         TR_RANGE = 3
         S_RANGE = int(0.5 / self.ctrl.model.si)
+        print(f"HERE todo s_range {S_RANGE}")
         qxy = self.imageItem_seismic.mapFromScene(event.scenePos())
         s, tr = (qxy.x(), qxy.y())
         # if event.buttons() == QtCore.Qt.MiddleButton:
