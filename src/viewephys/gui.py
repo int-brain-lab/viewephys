@@ -205,7 +205,7 @@ class PickSpikes():
             'trace': np.zeros(nrow, dtype=np.int32) * -1,
             'amp': np.zeros(nrow, dtype=np.int32),
             'group': np.zeros(nrow, dtype=np.int32),
-            't0': np.zeros(nrow, dtype=np.int32)
+            'sample0': np.zeros(nrow, dtype=np.int32)
         })
         return init_df
 
@@ -230,13 +230,13 @@ class PickSpikes():
         else:
             raise ValueError('df input is not pd.DataFrame')
 
-    def new_row_frompick(self, sample=None, trace=None, amp=None, group=None, t0=None):
+    def new_row_frompick(self, sample=None, trace=None, amp=None, group=None, sample0=None):
         new_row = self.init_df(nrow=1)
         new_row['sample'] = sample
         new_row['trace'] = trace
         new_row['amp'] = amp
         new_row['group'] = group
-        new_row['t0'] = t0
+        new_row['sample0'] = sample0
         return new_row
 
     def add_spike(self, new_row):

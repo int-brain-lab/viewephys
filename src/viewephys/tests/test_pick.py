@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 
 ps = PickSpikes()
-DEFAULT_DF_COLUMNS = ['sample', 'trace', 'amp', 'group', 't0']
+DEFAULT_DF_COLUMNS = ['sample', 'trace', 'amp', 'group', 'sample0']
 
 
 def test_init_df():
@@ -16,7 +16,7 @@ def test_init_df():
 
 
 def test_new_row_frompick():
-    new_row = ps.new_row_frompick(sample=1, trace=2, amp=3, group=4, t0=0)
+    new_row = ps.new_row_frompick(sample=1, trace=2, amp=3, group=4, sample0=0)
     # Check size
     np.testing.assert_(new_row.shape[0] == 1)
     # Check column names
@@ -41,8 +41,8 @@ def test_update_pick():
 
     # ----
     # Create filled df (2 rows)
-    df1 = ps.new_row_frompick(sample=1, trace=2, amp=3, group=4, t0=0)
-    df2 = ps.new_row_frompick(sample=3, trace=2, amp=3, group=5, t0=0)
+    df1 = ps.new_row_frompick(sample=1, trace=2, amp=3, group=4, sample0=0)
+    df2 = ps.new_row_frompick(sample=3, trace=2, amp=3, group=5, sample0=0)
     df = pd.concat([df1, df2])
     # Update
     ps.update_pick(df)
@@ -53,8 +53,8 @@ def test_update_pick():
 
 
 def test_add_spike():
-    df1 = ps.new_row_frompick(sample=1, trace=2, amp=3, group=4, t0=0)
-    df2 = ps.new_row_frompick(sample=3, trace=2, amp=3, group=5, t0=0)
+    df1 = ps.new_row_frompick(sample=1, trace=2, amp=3, group=4, sample0=0)
+    df2 = ps.new_row_frompick(sample=3, trace=2, amp=3, group=5, sample0=0)
     df = pd.concat([df1, df2])
     df = df.reset_index(drop=True)
     ps.update_pick(df1)
@@ -68,10 +68,10 @@ def test_add_spike():
 
 
 def test_remove_spike():
-    df1 = ps.new_row_frompick(sample=1, trace=2, amp=3, group=4, t0=0)
-    df2 = ps.new_row_frompick(sample=3, trace=2, amp=3, group=5, t0=0)
-    df3 = ps.new_row_frompick(sample=6, trace=6, amp=3, group=5, t0=0)
-    df4 = ps.new_row_frompick(sample=7, trace=6, amp=3, group=5, t0=0)
+    df1 = ps.new_row_frompick(sample=1, trace=2, amp=3, group=4, sample0=0)
+    df2 = ps.new_row_frompick(sample=3, trace=2, amp=3, group=5, sample0=0)
+    df3 = ps.new_row_frompick(sample=6, trace=6, amp=3, group=5, sample0=0)
+    df4 = ps.new_row_frompick(sample=7, trace=6, amp=3, group=5, sample0=0)
     df = pd.concat([df1, df2, df3, df4])
     df = df.reset_index(drop=True)
     # Update
