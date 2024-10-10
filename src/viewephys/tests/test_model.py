@@ -14,4 +14,3 @@ def test_model_dataclass():
 
     ProbeData(spikes=spikes, clusters=clusters, channels=channels)
     ProbeData(spikes=pd.DataFrame(spikes), clusters=pd.DataFrame(clusters), channels=pd.DataFrame(channels))
-

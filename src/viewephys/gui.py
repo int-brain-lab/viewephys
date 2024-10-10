@@ -111,8 +111,10 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if not self.cbs[k].isChecked():
                 continue
             if k == 'destripe':
-                data = fcn_destripe(x=data, fs=self.sr.fs, channel_labels=True, h=self.sr.geometry, neuropixel_version=self.sr.major_version)
-            self.viewers[k] = viewephys(data, self.sr.fs, channels=self.sr.geometry, title=k, t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
+                data = fcn_destripe(x=data, fs=self.sr.fs, channel_labels=True, h=self.sr.geometry,
+                                    neuropixel_version=self.sr.major_version)
+            self.viewers[k] = viewephys(data, self.sr.fs, channels=self.sr.geometry, title=k,
+                                        t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
 
     def closeEvent(self, event):
         for k in self.viewers:
@@ -120,6 +122,96 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if ev is not None:
                 ev.close()
         self.close()
+
+# =------
+
+class SpikeInterfaceViewer(QtWidgets.QMainWindow):
+    def __init__(self, recording, save_path_picks=None, *args, **kwargs):
+        """
+        :param parent:
+        :param sr: ibllib.io.spikeglx.Reader instance
+        """
+        super(SpikeInterfaceViewer, self).__init__(*args, *kwargs)
+        self.settings = QtCore.QSettings('int-brain-lab', 'SpikeInterfaceViewer')
+        uic.loadUi(Path(__file__).parent.joinpath('nav_file.ui'), self)
+        self.setWindowIcon(QtGui.QIcon(str(Path(__file__).parent.joinpath('viewephys.svg'))))
+        self.horizontalSlider.setMinimum(0)
+        self.horizontalSlider.setSingleStep(1)
+        self.horizontalSlider.setTickInterval(10)
+        self.horizontalSlider.sliderReleased.connect(self.on_horizontalSliderReleased)
+        self.horizontalSlider.valueChanged.connect(self.on_horizontalSliderValueChanged)
+        self.label_smin.setText('0')
+        self.show()
+        self.viewers = {'recording': None}
+        # self.cbs = {'butterworth': self.cb_butterworth_ap, 'destripe': self.cb_destripe_ap}
+        self.recording = recording
+        # Set save path for picks
+        if save_path_picks is None:
+            save_path_picks = Path(__file__).parent.joinpath('picks.csv')  # This will save into the viewephys folder
+        elif save_path_picks.suffix != '.csv':
+            raise ValueError('Extension of save file must be .csv')
+        self.save_path_picks = save_path_picks
+        self.set_recording()
+
+    def set_recording(self, *args, **kwargs):
+        # enable and set slider
+        num_samples = self.recording.get_num_samples()
+        fs = self.recording.sampling_frequency
+        total_duration = self.recording.get_total_duration()
+        num_channel = self.recording.get_num_channels()
+        self.horizontalSlider.setMaximum(int(np.floor(num_samples / NSAMP_CHUNK)))
+        tmax = np.floor(num_samples / NSAMP_CHUNK) * NSAMP_CHUNK / fs
+
+        self.label_smax.setText(f"{tmax:0.2f}s")
+        tlabel = f'{total_duration} seconds long \n' \
+                 f'{fs} Hz Sampling Frequency \n' \
+                 f'{num_channel} Channels'
+        self.label.setText(tlabel)
+        first = 0  # first sample
+        self.horizontalSlider.setValue(first)
+        self.horizontalSlider.setEnabled(True)
+        self.on_horizontalSliderReleased()
+
+        for k in self.viewers:
+            # Propagate save path to each view
+            self.viewers[k].save_path_picks = self.save_path_picks
+            self.viewers[k].current_sample0 = first
+            # TODO make sure picks df remain across views
+            # Load if exists
+            if self.save_path_picks.exists():
+                df = pd.read_csv(self.save_path_picks)
+                self.viewers[k].ctrl.model.pickspikes.load_df(df)
+                self.viewers[k].update_pick_scatter()
+
+
+    def on_horizontalSliderValueChanged(self):
+        tcur = self.horizontalSlider.value() * NSAMP_CHUNK / self.recording.sampling_frequency
+        self.label_sval.setText(f"{tcur:0.2f}s")
+
+    def on_horizontalSliderReleased(self):
+        first = int(float(self.horizontalSlider.value()) * NSAMP_CHUNK)
+        last = first + int(NSAMP_CHUNK)
+        data = self.recording.get_traces(start_frame=first, end_frame=last).T
+
+        t0 = first / self.recording.sampling_frequency * 0
+        # TODO if t0 is not zero the sliders bugs and does not lead to display change (empty)
+
+        for k in self.viewers:
+            self.viewers[k] = viewephys(data, self.recording.sampling_frequency,
+                                        channels=None, title=k,
+                                        t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
+            self.viewers[k].current_sample0 = first
+            self.viewers[k].update_pick_scatter()
+
+
+    def closeEvent(self, event):
+        for k in self.viewers:
+            ev = self.viewers[k]
+            if ev is not None:
+                ev.close()
+        self.close()
+
+#-----
 
 
 class PickSpikes():
@@ -134,6 +226,7 @@ class PickSpikes():
             'trace': np.zeros(nrow, dtype=np.int32) * -1,
             'amp': np.zeros(nrow, dtype=np.int32),
             'group': np.zeros(nrow, dtype=np.int32),
+            'sample0': np.zeros(nrow, dtype=np.int32)
         })
         return init_df
 
@@ -151,19 +244,20 @@ class PickSpikes():
 
         if isinstance(df, pd.DataFrame):
             # check all keys are in
-            indxmissing = np.where(~df.columns.isin(default_df.columns))[0]
+            indxmissing = np.where(~default_df.columns.isin(df.columns))[0]
             if len(indxmissing) > 0:
                 raise ValueError(f'df does not contain column {default_df.columns[indxmissing]}')
             self.update_pick(df)
         else:
             raise ValueError('df input is not pd.DataFrame')
 
-    def new_row_frompick(self, sample=None, trace=None, amp=None, group=None):
+    def new_row_frompick(self, sample=None, trace=None, amp=None, group=None, sample0=None):
         new_row = self.init_df(nrow=1)
         new_row['sample'] = sample
         new_row['trace'] = trace
         new_row['amp'] = amp
         new_row['group'] = group
+        new_row['sample0'] = sample0
         return new_row
 
     def add_spike(self, new_row):
@@ -184,13 +278,17 @@ class PickSpikes():
             df_updated = df_updated.reset_index(drop=True)
             self.update_pick(df_updated)
 
-
     def indx_select(self, sample, trace, s_range=0.5 * 30000, tr_range=3):
         iclose = np.where(np.logical_and(
             np.abs(self.picks['sample'] - sample) <= (s_range + 1),
             np.abs(self.picks['trace'] - trace) <= (tr_range + 1)
         ))[0]
         return iclose
+
+    def save_picks(self, save_path):
+        self.picks.to_csv(save_path, index=False)
+        # chose format CSV output
+
 
 class EphysViewer(EasyQC):
     keyPressed = QtCore.pyqtSignal(int)
@@ -202,6 +300,8 @@ class EphysViewer(EasyQC):
         self.menufile.setEnabled(True)
         self.settings = QtCore.QSettings('int-brain-lab', 'EphysViewer')
         self.header_curves = {}
+        self.current_sample0 = 0
+        self.save_path_picks = None
         # menus handling
         # menu pick
         self.menupick = self.menuBar().addMenu('&Pick')
@@ -278,6 +378,18 @@ class EphysViewer(EasyQC):
         match key:
             case QtCore.Qt.Key.Key_Space:
                 self.ctrl.model.pick_group += 1
+            case QtCore.Qt.Key.Key_S:
+                print(f"Saved picks to: {self.save_path_picks}")
+                self.ctrl.model.pickspikes.save_picks(self.save_path_picks)
+
+    def update_pick_scatter(self):
+        # updates scatter plot with only picks from T0
+        df = self.ctrl.model.pickspikes.picks
+        df_local_picks = df.loc[df["sample0"] == self.current_sample0]
+
+        self.ctrl.add_scatter(df_local_picks['sample'] * self.ctrl.model.si,
+                              df_local_picks['trace'],
+                              label='_picks', rgb=PICK_COLOR)
 
     def mouseClickPickingEvent(self, event):
         """
@@ -294,6 +406,8 @@ class EphysViewer(EasyQC):
             return
         TR_RANGE = 3
         S_RANGE = int(0.5 / self.ctrl.model.si)
+        # TODO modify s_range so it is scaled according to zoom,
+        #  otherwise can be hard to delete when zoomed out
         qxy = self.imageItem_seismic.mapFromScene(event.scenePos())
         s, tr = (qxy.x(), qxy.y())
         # if event.buttons() == QtCore.Qt.MiddleButton:
@@ -331,13 +445,11 @@ class EphysViewer(EasyQC):
             group = 0  # TODO group
             # Create new row
             new_row = self.ctrl.model.pickspikes.new_row_frompick(
-                sample=tmax, trace=xmax, amp=amp, group=group)
+                sample=tmax, trace=xmax, amp=amp, group=group, sample0=self.current_sample0)
             self.ctrl.model.pickspikes.add_spike(new_row=new_row)
 
         # updates scatter plot
-        self.ctrl.add_scatter(self.ctrl.model.pickspikes.picks['sample'] * self.ctrl.model.si,
-                              self.ctrl.model.pickspikes.picks['trace'],
-                              label='_picks', rgb=PICK_COLOR)
+        self.update_pick_scatter()
 
     def save_current_plot(self, filename):
         """
