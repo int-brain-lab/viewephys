@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 
 ps = PickSpikes()
-DEFAULT_DF_COLUMNS = ['sample', 'trace', 'amp', 'group']
+DEFAULT_DF_COLUMNS = ["sample", "trace", "amp", "group"]
 
 
 def test_init_df():
@@ -23,10 +23,10 @@ def test_new_row_frompick():
     indxmissing = np.where(~new_row.columns.isin(DEFAULT_DF_COLUMNS))[0]
     np.testing.assert_(len(indxmissing) == 0)
     # Check values
-    np.testing.assert_(new_row['sample'][0] == 1)
-    np.testing.assert_(new_row['trace'][0] == 2)
-    np.testing.assert_(new_row['amp'][0] == 3)
-    np.testing.assert_(new_row['group'][0] == 4)
+    np.testing.assert_(new_row["sample"][0] == 1)
+    np.testing.assert_(new_row["trace"][0] == 2)
+    np.testing.assert_(new_row["amp"][0] == 3)
+    np.testing.assert_(new_row["group"][0] == 4)
 
 
 def test_update_pick():
@@ -63,7 +63,9 @@ def test_add_spike():
     pd.testing.assert_frame_equal(ps.picks, df)
     np.testing.assert_(ps.pick_index == 2)
     np.testing.assert_(ps.pick_group == 5)
-    np.testing.assert_(ps.picks.index[0] == 0)  # This is redundant with testing equal to df
+    np.testing.assert_(
+        ps.picks.index[0] == 0
+    )  # This is redundant with testing equal to df
     np.testing.assert_(ps.picks.index[1] == 1)  # But better be 100% sure
 
 

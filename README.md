@@ -63,7 +63,7 @@ Fork and PR.
 
 Pypi Release checklist:
 ```shell
-flake8
+ruff check
 rm -fR dist
 rm -fR build
 python setup.py sdist bdist_wheel

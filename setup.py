@@ -3,8 +3,8 @@ import setuptools
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-with open('requirements.txt') as f:
-    require = [x.strip() for x in f.readlines() if not x.startswith('git+')]
+with open("requirements.txt") as f:
+    require = [x.strip() for x in f.readlines() if not x.startswith("git+")]
 
 setuptools.setup(
     name="viewephys",
@@ -23,11 +23,11 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     install_requires=require,
-    package_dir={'': 'src'},
+    package_dir={"": "src"},
     packages=setuptools.find_packages(where="src"),
-    package_data={'viewephys': ['raster.ui', 'nav_file.ui', 'viewephys.svg']},
+    package_data={"viewephys": ["raster.ui", "nav_file.ui", "viewephys.svg"]},
     python_requires=">=3.10",
     entry_points={
-        'console_scripts': ['viewephys=viewephys.command_line:viewephys'],
-    }
+        "console_scripts": ["viewephys=viewephys.command_line:viewephys"],
+    },
 )

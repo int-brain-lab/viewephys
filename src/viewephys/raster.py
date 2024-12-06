@@ -15,12 +15,12 @@ from brainbox.io.spikeglx import Streamer
 import one.alf.io as alfio
 from one.alf.files import get_session_path
 import spikeglx
-from ibldsp import voltage, utils
+from ibldsp import voltage
 from iblatlas.atlas import BrainRegions
 
 from viewephys.gui import viewephys, SNS_PALETTE
 
-T_BIN = .007  # time bin size in secs
+T_BIN = 0.007  # time bin size in secs
 D_BIN = 10  # depth bin size in um
 YMAX = 4000
 
@@ -38,7 +38,9 @@ def view_pid(pid, one):
     sl.load_spike_sorting(pnames=[pname])
     sr = Streamer(pid=pid, one=one)
     rv = RasterView()
-    rv.set_model(sr, *sl.load_spike_sorting(dataset_types=['spikes.samples']), trials=sl.trials)
+    rv.set_model(
+        sr, *sl.load_spike_sorting(dataset_types=["spikes.samples"]), trials=sl.trials
+    )
     return rv
 
 
@@ -53,8 +55,10 @@ def view_raster(bin_file):
     pname = bin_file.parent.name
     session_path = get_session_path(bin_file)
     ssl = EphysSessionLoader(session_path=session_path, pname=pname)
-    spikes, clusters, channels = ssl.load_spike_sorting(dataset_types=['spikes.samples'])
-    trials = alfio.load_object(ssl.session_path.joinpath('alf'), 'trials')
+    spikes, clusters, channels = ssl.load_spike_sorting(
+        dataset_types=["spikes.samples"]
+    )
+    trials = alfio.load_object(ssl.session_path.joinpath("alf"), "trials")
     return RasterView(bin_file, spikes, clusters, trials=trials)
 
 
@@ -73,7 +77,8 @@ class ProbeData:
         # set the raster data
         iok = ~np.isnan(self.spikes.depths)
         self.raster, self.raster_times, self.raster_depths = bincount2D(
-            self.spikes.times[iok], self.spikes.depths[iok], T_BIN, D_BIN)
+            self.spikes.times[iok], self.spikes.depths[iok], T_BIN, D_BIN
+        )
         self.br = BrainRegions()
 
 
@@ -82,7 +87,7 @@ class RasterView(QtWidgets.QMainWindow):
         self.eqcs = []
         super(RasterView, self).__init__(*args, **kwargs)
         # wave by Diana Militano from the Noun Projectp
-        uic.loadUi(Path(__file__).parent.joinpath('raster.ui'), self)
+        uic.loadUi(Path(__file__).parent.joinpath("raster.ui"), self)
         background_color = self.palette().color(self.backgroundRole())
         self.plotItem_raster.setAspectLocked(False)
         self.imageItem_raster = pg.ImageItem()
@@ -94,19 +99,28 @@ class RasterView(QtWidgets.QMainWindow):
         s.sigMouseClicked.connect(self.mouseClick)
         self.show()
         self.actionopen.triggered.connect(self.open_file)
-        self.settings = QtCore.QSettings('int-brain-lab', 'Raster')
+        self.settings = QtCore.QSettings("int-brain-lab", "Raster")
 
     def set_model(self, sr, spikes, clusters, channels=None, trials=None):
-        self.model = ProbeData(spikes, clusters, channels=channels, trials=trials, sr=sr)
+        self.model = ProbeData(
+            spikes, clusters, channels=channels, trials=trials, sr=sr
+        )
         # set image
         self.imageItem_raster.setImage(self.data.raster.T)
-        transform = [T_BIN, 0., 0., 0., D_BIN, 0., -.5, -.5, 1.]
+        transform = [T_BIN, 0.0, 0.0, 0.0, D_BIN, 0.0, -0.5, -0.5, 1.0]
         self.transform = np.array(transform).reshape((3, 3)).T
         self.imageItem_raster.setTransform(QtGui.QTransform(*transform))
-        self.plotItem_raster.setLimits(xMin=0, xMax=self.data.raster_times[-1], yMin=0, yMax=self.data.raster_depths[-1])
+        self.plotItem_raster.setLimits(
+            xMin=0,
+            xMax=self.data.raster_times[-1],
+            yMin=0,
+            yMax=self.data.raster_depths[-1],
+        )
         # set colormap
-        cm = pg.colormap.get('Greys', source='matplotlib')  # prepare a linear color map
-        bar = pg.ColorBarItem(values=(0, .5), colorMap=cm)  # prepare interactive color bar
+        cm = pg.colormap.get("Greys", source="matplotlib")  # prepare a linear color map
+        bar = pg.ColorBarItem(
+            values=(0, 0.5), colorMap=cm
+        )  # prepare interactive color bar
         # Have ColorBarItem control colors of img and appear in 'plot':
         bar.setImageItem(self.imageItem_raster)
         ################################################## plot location
@@ -117,27 +131,36 @@ class RasterView(QtWidgets.QMainWindow):
         ################################################## plot trials
         if trials is not None:
             trial_times = dict(
-                goCue_times=trials['goCue_times'],
-                error_times=trials['feedback_times'][trials['feedbackType'] == -1],
-                reward_times=trials['feedback_times'][trials['feedbackType'] == 1])
+                goCue_times=trials["goCue_times"],
+                error_times=trials["feedback_times"][trials["feedbackType"] == -1],
+                reward_times=trials["feedback_times"][trials["feedbackType"] == 1],
+            )
             self.trial_lines = {}
             for i, k in enumerate(trial_times):
                 self.trial_lines[k] = pg.PlotCurveItem()
                 self.plotItem_raster.addItem(self.trial_lines[k])
                 x = np.tile(trial_times[k][:, np.newaxis], (1, 2)).flatten()
-                y = np.tile(np.array([0, 1, 1, 0]), int(trial_times[k].shape[0] / 2 + 1))[:trial_times[k].shape[0] * 2] * YMAX
+                y = (
+                    np.tile(
+                        np.array([0, 1, 1, 0]), int(trial_times[k].shape[0] / 2 + 1)
+                    )[: trial_times[k].shape[0] * 2]
+                    * YMAX
+                )
                 couleur = np.r_[np.array(SNS_PALETTE[i]) * 255, 22].astype(np.uint8)
                 print(couleur)
-                self.trial_lines[k].setData(x=x.flatten(), y=y.flatten(), pen=pg.mkPen(couleur))
+                self.trial_lines[k].setData(
+                    x=x.flatten(), y=y.flatten(), pen=pg.mkPen(couleur)
+                )
                 # self.trial_lines[k].setVisible(False)
 
     def open_file(self):
         file, _ = QtWidgets.QFileDialog.getOpenFileName(
             parent=self,
-            caption='Select Raw electrophysiology recording',
-            directory=self.settings.value('bin_file_path'),
-            filter='SpikeGlx (*.*bin);; Open Ephys (*.dat)')
-        if file == '':
+            caption="Select Raw electrophysiology recording",
+            directory=self.settings.value("bin_file_path"),
+            filter="SpikeGlx (*.*bin);; Open Ephys (*.dat)",
+        )
+        if file == "":
             return
         file = Path(file)
         self.settings.setValue("bin_file_path", str(file.parent))
@@ -148,11 +171,13 @@ class RasterView(QtWidgets.QMainWindow):
             return
         qxy = self.imageItem_raster.mapFromScene(event.scenePos())
         x = qxy.x()
-        self.show_ephys(t0=self.data.raster_times[int(x - .5)])
+        self.show_ephys(t0=self.data.raster_times[int(x - 0.5)])
         ymax = np.max(self.data.raster_depths) + 50
-        self.line_eqc.setData(x=x + np.array([-.5, -.5, .5, .5]),
-                              y=np.array([0, ymax, ymax, 0]),
-                              pen=pg.mkPen((0, 255, 0)))
+        self.line_eqc.setData(
+            x=x + np.array([-0.5, -0.5, 0.5, 0.5]),
+            y=np.array([0, ymax, ymax, 0]),
+            pen=pg.mkPen((0, 255, 0)),
+        )
 
     def keyPressEvent(self, e):
         """
@@ -163,27 +188,43 @@ class RasterView(QtWidgets.QMainWindow):
         k, m = (e.key(), e.modifiers())
         # page up / ctrl + a
         if k == QtCore.Qt.Key_PageUp or (
-                m == QtCore.Qt.ControlModifier and k == QtCore.Qt.Key_A):
+            m == QtCore.Qt.ControlModifier and k == QtCore.Qt.Key_A
+        ):
             self.imageItem_raster.setLevels([0, self.imageItem_raster.levels[1] / 1.4])
         # page down / ctrl + z
         elif k == QtCore.Qt.Key_PageDown or (
-                m == QtCore.Qt.ControlModifier and k == QtCore.Qt.Key_Z):
+            m == QtCore.Qt.ControlModifier and k == QtCore.Qt.Key_Z
+        ):
             self.imageItem_raster.setLevels([0, self.imageItem_raster.levels[1] * 1.4])
 
-    def show_ephys(self, t0, tlen=.4):
-
+    def show_ephys(self, t0, tlen=0.4):
         first = int(t0 * self.data.sr.fs)
         last = first + int(self.data.sr.fs * tlen)
 
-        raw = self.data.sr[first:last, : - self.data.sr.nsync].T
+        raw = self.data.sr[first:last, : -self.data.sr.nsync].T
 
-        butter_kwargs = {'N': 3, 'Wn': 300 / self.data.sr.fs * 2, 'btype': 'highpass'}
-        sos = scipy.signal.butter(**butter_kwargs, output='sos')
+        butter_kwargs = {"N": 3, "Wn": 300 / self.data.sr.fs * 2, "btype": "highpass"}
+        sos = scipy.signal.butter(**butter_kwargs, output="sos")
         butt = scipy.signal.sosfiltfilt(sos, raw)
         destripe = voltage.destripe(raw, fs=self.data.sr.fs, channel_labels=True)
-        self.eqc_raw = viewephys(butt, self.data.sr.fs, channels=self.data.channels, br=self.data.br, title='butt', t0=t0, t_scalar=1)
-        self.eqc_des = viewephys(destripe, self.data.sr.fs, channels=self.data.channels, br=self.data.br, title='destripe', t0=t0, t_scalar=1)
-        stripes_noise = 20 * np.log10(np.median(utils.rms(butt - destripe)))
+        self.eqc_raw = viewephys(
+            butt,
+            self.data.sr.fs,
+            channels=self.data.channels,
+            br=self.data.br,
+            title="butt",
+            t0=t0,
+            t_scalar=1,
+        )
+        self.eqc_des = viewephys(
+            destripe,
+            self.data.sr.fs,
+            channels=self.data.channels,
+            br=self.data.br,
+            title="destripe",
+            t0=t0,
+            t_scalar=1,
+        )
         eqc_xrange = [t0 + tlen / 2 - 0.01, t0 + tlen / 2 + 0.01]
         self.eqc_des.viewBox_seismic.setXRange(*eqc_xrange)
         self.eqc_raw.viewBox_seismic.setXRange(*eqc_xrange)
@@ -191,7 +232,9 @@ class RasterView(QtWidgets.QMainWindow):
         # eqc2 = viewephys(butt - destripe, self.sr.fs, channels=None, br=None, title='diff')
         # overlay spikes
         tprobe = self.data.spikes.samples / self.data.sr.fs
-        slice_spikes = slice(np.searchsorted(tprobe, t0), np.searchsorted(tprobe, t0 + tlen))
+        slice_spikes = slice(
+            np.searchsorted(tprobe, t0), np.searchsorted(tprobe, t0 + tlen)
+        )
         t = tprobe[slice_spikes]
         c = self.data.clusters.channels[self.data.spikes.clusters[slice_spikes]]
         self.eqc_raw.ctrl.add_scatter(t, c)

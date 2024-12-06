@@ -13,5 +13,8 @@ def test_model_dataclass():
     channels = Bunch(trace_header(version=1))
 
     ProbeData(spikes=spikes, clusters=clusters, channels=channels)
-    ProbeData(spikes=pd.DataFrame(spikes), clusters=pd.DataFrame(clusters), channels=pd.DataFrame(channels))
-
+    ProbeData(
+        spikes=pd.DataFrame(spikes),
+        clusters=pd.DataFrame(clusters),
+        channels=pd.DataFrame(channels),
+    )
