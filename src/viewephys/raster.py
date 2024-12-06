@@ -136,7 +136,7 @@ class RasterView(QtWidgets.QMainWindow):
             parent=self,
             caption='Select Raw electrophysiology recording',
             directory=self.settings.value('bin_file_path'),
-            filter='*.*bin')
+            filter='SpikeGlx (*.*bin);; Open Ephys (*.dat)')
         if file == '':
             return
         file = Path(file)

@@ -64,7 +64,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if file is None:
             file, _ = QtWidgets.QFileDialog.getOpenFileName(
                 parent=self, caption='Select Raw electrophysiology recording',
-                directory=self.settings.value('bin_file_path'), filter='*.*bin')
+                directory=self.settings.value('bin_file_path'),
+                 filter='Electrophysiology files (*.*bin *.dat)')
         if file == '':
             return
         file = Path(file)
@@ -95,7 +96,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
     def on_horizontalSliderReleased(self):
         first = int(float(self.horizontalSlider.value()) * NSAMP_CHUNK)
         last = first + int(NSAMP_CHUNK)
-        data = self.sr[first:last, :-self.sr.nsync].T
+        data = self.sr[first:last, :self.sr.nc - self.sr.nsync].T
         # get parameters for both AP and LFP band
 
         if self.sr.type == 'lf':
@@ -111,7 +112,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if not self.cbs[k].isChecked():
                 continue
             if k == 'destripe':
-                data = fcn_destripe(x=data, fs=self.sr.fs, channel_labels=True, h=self.sr.geometry, neuropixel_version=self.sr.major_version)
+                data = fcn_destripe(x=data, fs=self.sr.fs, channel_labels=False, h=self.sr.geometry, neuropixel_version=self.sr.major_version)
             self.viewers[k] = viewephys(data, self.sr.fs, channels=self.sr.geometry, title=k, t0=t0 * T_SCALAR, t_scalar=T_SCALAR, a_scalar=A_SCALAR)
 
     def closeEvent(self, event):
