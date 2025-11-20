@@ -45,6 +45,16 @@
          <property name="alignment">
           <set>Qt::AlignCenter</set>
          </property>
+         <property name="textInteractionFlags">
+          <set>Qt::LinksAccessibleByMouse|Qt::TextSelectableByMouse</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="cb_raw_ap">
+         <property name="text">
+          <string>raw</string>
+         </property>
         </widget>
        </item>
        <item>
@@ -126,7 +136,7 @@
      <x>0</x>
      <y>0</y>
      <width>785</width>
-     <height>24</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">

@@ -13,8 +13,8 @@ from iblutil.numerical import ismember
 import easyqc.qt
 from easyqc.gui import EasyQC
 
-T_SCALAR = 1e3  # defaults ms for user side
-A_SCALAR = 1e6  # defaults uV for user side
+T_SCALAR = 1  # defaults s for user side
+A_SCALAR = 1e6  # defaults V for user side
 NSAMP_CHUNK = 10000  # window length in samples
 N_SAMPLES_INIT = 2000  # number of samples in the manual pick array
 
@@ -55,10 +55,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.horizontalSlider.valueChanged.connect(self.on_horizontalSliderValueChanged)
         self.label_smin.setText("0")
         self.show()
-        self.viewers = {"butterworth": None, "destripe": None}
+        self.viewers = {"butterworth": None, "destripe": None, 'raw': None}
         self.cbs = {
             "butterworth": self.cb_butterworth_ap,
             "destripe": self.cb_destripe_ap,
+            "raw": self.cb_raw_ap,
         }
         if bin_file is not None:
             self.open_file(file=bin_file)
@@ -90,11 +91,12 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         tmax = np.floor(self.sr.ns / NSAMP_CHUNK) * NSAMP_CHUNK / self.sr.fs
         self.label_smax.setText(f"{tmax:0.2f}s")
         tlabel = (
-            f"{self.sr.file_bin.name} \n \n"
+            f"{self.sr.file_bin} \n \n"
             f"NEUROPIXEL {self.sr.major_version} \n"
             f"{self.sr.rl} seconds long \n"
             f"{self.sr.fs} Hz Sampling Frequency \n"
-            f"{self.sr.nc} Channels"
+            f"{self.sr.nc} Channels \n"
+            f"Saturation ADC at {self.sr.range_volts[0] * 1e6} uV \n"
         )
         self.label.setText(tlabel)
         self.horizontalSlider.setValue(0)
@@ -108,29 +110,32 @@ class EphysBinViewer(QtWidgets.QMainWindow):
     def on_horizontalSliderReleased(self):
         first = int(float(self.horizontalSlider.value()) * NSAMP_CHUNK)
         last = first + int(NSAMP_CHUNK)
-        data = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
+        raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
         # get parameters for both AP and LFP band
-
+        t0 = first / self.sr.fs * 0
         if self.sr.type == "lf":
             butter_kwargs = {"N": 3, "Wn": 3 / self.sr.fs * 2, "btype": "highpass"}
             fcn_destripe = voltage.destripe_lfp
         else:
             butter_kwargs = {"N": 3, "Wn": 300 / self.sr.fs * 2, "btype": "highpass"}
             fcn_destripe = voltage.destripe
-        sos = scipy.signal.butter(**butter_kwargs, output="sos")
-        data = scipy.signal.sosfiltfilt(sos, data)
-        t0 = first / self.sr.fs * 0
         for k in self.viewers:
             if not self.cbs[k].isChecked():
                 continue
-            if k == "destripe":
-                data = fcn_destripe(
-                    x=data,
-                    fs=self.sr.fs,
-                    channel_labels=False,
-                    h=self.sr.geometry,
-                    neuropixel_version=self.sr.major_version,
-                )
+            match k:
+                case 'raw':
+                    data = raw
+                case 'destripe':
+                    data = fcn_destripe(
+                        x=raw,
+                        fs=self.sr.fs,
+                        channel_labels=False,
+                        h=self.sr.geometry,
+                        neuropixel_version=self.sr.major_version,
+                    )
+                case "butterworth":
+                    sos = scipy.signal.butter(**butter_kwargs, output="sos")
+                    data = scipy.signal.sosfiltfilt(sos, raw)
             self.viewers[k] = viewephys(
                 data,
                 self.sr.fs,
