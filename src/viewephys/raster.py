@@ -13,7 +13,7 @@ from brainbox.processing import bincount2D
 from brainbox.io.one import EphysSessionLoader
 from brainbox.io.spikeglx import Streamer
 import one.alf.io as alfio
-from one.alf.files import get_session_path
+from one.alf.path import get_session_path
 import spikeglx
 from ibldsp import voltage
 from iblatlas.atlas import BrainRegions
