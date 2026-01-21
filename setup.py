@@ -8,9 +8,9 @@ with open("requirements.txt") as f:
 
 setuptools.setup(
     name="viewephys",
-    version="1.0.1",
+    version="1.1.0",
     author="Olivier Winter",
-    description="Raw Neuropixel data viewer for numpy",
+    description="Neuropixel raw data viewer",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/int-brain-lab/viewephys",

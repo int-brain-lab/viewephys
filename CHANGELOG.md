@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [1.1.0 UNRELEASED]
+
+### added
+- option for unfiltered data and LFP filtered data in file viewer
+
 
 ## [1.0.1] - 2024-12-06
 

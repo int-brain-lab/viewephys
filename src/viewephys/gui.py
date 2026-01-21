@@ -55,9 +55,10 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.horizontalSlider.valueChanged.connect(self.on_horizontalSliderValueChanged)
         self.label_smin.setText("0")
         self.show()
-        self.viewers = {"butterworth": None, "destripe": None, 'raw': None}
+        self.viewers = {"butterworth": None, "destripe": None, 'raw': None, 'broadband': None}
         self.cbs = {
             "butterworth": self.cb_butterworth_ap,
+            "broadband": self.cb_butterworth_lf,
             "destripe": self.cb_destripe_ap,
             "raw": self.cb_raw_ap,
         }
@@ -134,6 +135,12 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                         neuropixel_version=self.sr.major_version,
                     )
                 case "butterworth":
+                    sos = scipy.signal.butter(**butter_kwargs, output="sos")
+                    data = scipy.signal.sosfiltfilt(sos, raw)
+                case "broadband":
+                    last = first + int(self.sr.fs * 3)
+                    raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
+                    butter_kwargs = {"N": 3, "Wn": 2 / self.sr.fs * 2, "btype": "highpass"}
                     sos = scipy.signal.butter(**butter_kwargs, output="sos")
                     data = scipy.signal.sosfiltfilt(sos, raw)
             self.viewers[k] = viewephys(

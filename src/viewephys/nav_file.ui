@@ -60,10 +60,17 @@
        <item>
         <widget class="QCheckBox" name="cb_butterworth_ap">
          <property name="text">
-          <string>butterworth</string>
+          <string>AP band (high-pass 300Hz)</string>
          </property>
          <property name="checked">
           <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="cb_butterworth_lf">
+         <property name="text">
+          <string>LF broadband (high-pass 2 Hz)</string>
          </property>
         </widget>
        </item>
@@ -73,7 +80,7 @@
           <bool>true</bool>
          </property>
          <property name="text">
-          <string>destripe</string>
+          <string>AP band Destriped</string>
          </property>
          <property name="checked">
           <bool>false</bool>
