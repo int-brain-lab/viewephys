@@ -1,5 +1,0 @@
-easyqc >= 0.7.0
-ibl-neuropixel >= 1.0.1
-ibllib
-iblutil >= 1.6.0
-pandas
