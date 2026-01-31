@@ -42,6 +42,3 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 viewephys = ["raster.ui", "nav_file.ui", "viewephys.svg"]
-
-[tool.setuptools.dynamic]
-dependencies = { file = ["requirements.txt"] }
