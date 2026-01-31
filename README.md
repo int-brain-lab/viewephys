@@ -66,7 +66,7 @@ Pypi Release checklist:
 ruff check
 rm -fR dist
 rm -fR build
-python setup.py sdist bdist_wheel
+python -m build
 twine upload dist/*
 #twine upload --repository-url https://test.pypi.org/legacy/ dist/*
 ```
