@@ -12,27 +12,9 @@ from ibldsp import voltage
 from iblutil.numerical import ismember
 import easyqc.qt
 from easyqc.gui import EasyQC
+from configs import get_configs
 
-T_SCALAR = 1  # defaults s for user side
-A_SCALAR = 1e6  # defaults V for user side
-NSAMP_CHUNK = 10000  # window length in samples
-N_SAMPLES_INIT = 2000  # number of samples in the manual pick array
-
-PICK_COLOR = (0, 255, 255)
-
-SNS_PALETTE = [
-    (0.12156862745098039, 0.4666666666666667, 0.7058823529411765),
-    (1.0, 0.4980392156862745, 0.054901960784313725),
-    (0.17254901960784313, 0.6274509803921569, 0.17254901960784313),
-    (0.8392156862745098, 0.15294117647058825, 0.1568627450980392),
-    (0.5803921568627451, 0.403921568627451, 0.7411764705882353),
-    (0.5490196078431373, 0.33725490196078434, 0.29411764705882354),
-    (0.8901960784313725, 0.4666666666666667, 0.7607843137254902),
-    (0.4980392156862745, 0.4980392156862745, 0.4980392156862745),
-    (0.7372549019607844, 0.7411764705882353, 0.13333333333333333),
-    (0.09019607843137255, 0.7450980392156863, 0.8117647058823529),
-]
-
+CONFIGS = get_configs()
 
 class EphysBinViewer(QtWidgets.QMainWindow):
     def __init__(self, bin_file=None, *args, **kwargs):
@@ -41,6 +23,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         :param sr: ibllib.io.spikeglx.Reader instance
         """
         super(EphysBinViewer, self).__init__(*args, *kwargs)
+
         self.settings = QtCore.QSettings("int-brain-lab", "EphysBinViewer")
         uic.loadUi(Path(__file__).parent.joinpath("nav_file.ui"), self)
         self.setWindowIcon(
@@ -88,8 +71,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 file, dtype="int16", nc=384, fs=30000, ns=file.stat().st_size / 384 / 2
             )
         # enable and set slider
-        self.horizontalSlider.setMaximum(int(np.floor(self.sr.ns / NSAMP_CHUNK)))
-        tmax = np.floor(self.sr.ns / NSAMP_CHUNK) * NSAMP_CHUNK / self.sr.fs
+        self.horizontalSlider.setMaximum(int(np.floor(self.sr.ns / CONFIGS["nsamp_chunk"])))
+        tmax = np.floor(self.sr.ns / CONFIGS["nsamp_chunk"]) * CONFIGS["nsamp_chunk"] / self.sr.fs
         self.label_smax.setText(f"{tmax:0.2f}s")
         tlabel = (
             f"{self.sr.file_bin} \n \n"
@@ -105,12 +88,12 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.on_horizontalSliderReleased()
 
     def on_horizontalSliderValueChanged(self):
-        tcur = self.horizontalSlider.value() * NSAMP_CHUNK / self.sr.fs
+        tcur = self.horizontalSlider.value() * CONFIGS["nsamp_chunk"] / self.sr.fs
         self.label_sval.setText(f"{tcur:0.2f}s")
 
     def on_horizontalSliderReleased(self):
-        first = int(float(self.horizontalSlider.value()) * NSAMP_CHUNK)
-        last = first + int(NSAMP_CHUNK)
+        first = int(float(self.horizontalSlider.value()) * CONFIGS["nsamp_chunk"])
+        last = first + int(CONFIGS["nsamp_chunk"])
         raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
         # get parameters for both AP and LFP band
         t0 = first / self.sr.fs * 0
@@ -148,9 +131,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 self.sr.fs,
                 channels=self.sr.geometry,
                 title=k,
-                t0=t0 * T_SCALAR,
-                t_scalar=T_SCALAR,
-                a_scalar=A_SCALAR,
+                t0=t0 * CONFIGS["time_scalar"],
+                time_scalar=CONFIGS["time_scalar"],
+                amplitude_scalar=CONFIGS["amplitude_scalar"],
             )
 
     def closeEvent(self, event):
@@ -241,8 +224,12 @@ class PickSpikes:
 class EphysViewer(EasyQC):
     keyPressed = QtCore.pyqtSignal(int)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, time_scalar, pick_color, sns_palette, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.time_scalar = time_scalar
+        self.pick_color = pick_color
+        self.sns_palette = sns_pallette
 
         self.ctrl.model.pickspikes = PickSpikes()
         self.menufile.setEnabled(True)
@@ -263,7 +250,7 @@ class EphysViewer(EasyQC):
         self.show()
 
     @staticmethod
-    def _get_or_create(title=None):
+    def _get_or_create(time_scalar, pick_color, sns_palette, title=None):
         ev = next(
             filter(
                 lambda e: e.isVisible() and e.windowTitle() == title,
@@ -272,7 +259,7 @@ class EphysViewer(EasyQC):
             None,
         )
         if ev is None:
-            ev = EphysViewer()
+            ev = EphysViewer(time_scalar, pick_color, sns_palette)
             ev.setWindowTitle(title)
         return ev
 
@@ -290,7 +277,7 @@ class EphysViewer(EasyQC):
         :return:
         """
         y = np.tile(np.array([0, 1, np.nan]), times.size)
-        x = np.tile(times[:, np.newaxis] * T_SCALAR, 3).flatten()
+        x = np.tile(times[:, np.newaxis] * self.time_scalar, 3).flatten()
         self.add_header_curve(x, y, name)
 
     def add_header_curve(self, x, y, name):
@@ -305,7 +292,7 @@ class EphysViewer(EasyQC):
         if name in self.header_curves:
             self.rm_header_curve(name)
         ind = len(self.header_curves.keys())
-        pen = pg.mkPen(color=np.array(SNS_PALETTE[ind]) * 255)
+        pen = pg.mkPen(color=np.array(self.sns_palette[ind]) * 255)
         self.header_curves[name] = pg.PlotCurveItem(
             x=x, y=y, connect="finite", pen=pen, name="licks"
         )
@@ -408,7 +395,7 @@ class EphysViewer(EasyQC):
             self.ctrl.model.pickspikes.picks["sample"] * self.ctrl.model.si,
             self.ctrl.model.pickspikes.picks["trace"],
             label="_picks",
-            rgb=PICK_COLOR,
+            rgb=self.pick_color,
         )
 
     def save_current_plot(self, filename):
@@ -427,9 +414,10 @@ def viewephys(
     br=None,
     title="ephys",
     t0=0,
-    t_scalar=T_SCALAR,
-    a_scalar=A_SCALAR,
+    time_scalar=None,
+    amplitude_scalar=None,
     colormap=None,
+    sns_palette=None
 ) -> EphysViewer:
     """
     :param data: [nc, ns]
@@ -440,15 +428,25 @@ def viewephys(
     :param colormap: non-standard colormap from colorcet or matplotlib such as "PuOr"
     :return:
     """
+    if time_scalar is None:
+        time_scalar = CONFIGS["time_scalar"]
+
+    if amplitude_scalar is None:
+        amplitude_scalar = CONFIGS["amplitude_scalar"]
+
+    if sns_palette is None:
+        sns_palette = CONFIGS["sns_palette"]
 
     easyqc.qt.create_app()
-    ev = EphysViewer._get_or_create(title=title)
+    ev = EphysViewer._get_or_create(
+        time_scalar, pick_color, sns_palette, title=title
+    )
 
     if channels is None:
         channels = trace_header(version=1)
     if data is not None:
         ev.ctrl.update_data(
-            data.T * a_scalar, si=1 / fs * t_scalar, h=channels, taxis=0, t0=t0
+            data.T * amplitude_scalar, si=1 / fs * time_scalar, h=channels, taxis=0, t0=t0
         )
     if br is not None and "atlas_id" in channels:
         _, ir = ismember(channels["atlas_id"], br.id)
