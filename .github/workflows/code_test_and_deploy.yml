@@ -25,11 +25,7 @@ jobs:
 
     strategy:
       matrix:
-        # macos-14 is M1, macos-13 is intel. Run on earliest and
-        # latest python versions. All python versions are tested in
-        # the weekly cron job.
         os: [ ubuntu-latest] # , windows-latest, macos-14, macos-13]
-        # Test all Python versions for cron job, and only first/last for other triggers
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
