@@ -1,5 +1,6 @@
 
-CONFIGS = {
+def get_configs():
+    return {
     "time_scalar": 1,  # defaults s for user side
     "amplitude_scalar": 1e6,  # defaults V for user side
     "nsamp_chunk": 10000,  # window length in samples

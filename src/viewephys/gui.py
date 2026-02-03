@@ -12,7 +12,7 @@ from ibldsp import voltage
 from iblutil.numerical import ismember
 import easyqc.qt
 from easyqc.gui import EasyQC
-from configs import get_configs
+from viewephys.configs import get_configs
 
 CONFIGS = get_configs()
 
