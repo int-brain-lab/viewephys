@@ -36,7 +36,7 @@ When the picking mode is enabled (menu pick)
 
 ## Examples
 
-### Visualize raw binary file
+### Visualize raw binary file through the command line
 Activate your environment and type `viewephys`, you can then load a neuropixel binary file using the file menu.
 
 ![alt text](./docs/raw_bin_viewer_destripe.png "Ephys viewer ")
@@ -47,6 +47,11 @@ viewphys -f /path/to/raw.bin
 ```
 
 ### Load in a numpy array or slice
+
+`viewephys` can be used through the Python console or iPython, allowing you to create
+multiple instances of the viewer at once. 
+
+
 ```python
 # if running ipython, you may have to use the `%gui qt` magic command
 import numpy as np
@@ -54,9 +59,48 @@ from viewephys.gui import viewephys
 nc, ns, fs = (384, 50000, 30000)  # this mimics one second of neuropixel data
 data = np.random.randn(nc, ns) / 1e6  # volts by default
 ve = viewephys(data, fs=fs)
+
+# We can open multiple windows at once, but they must have different titles
+data2 = data * 50
+ve2 = viewephys(data, fs=fs, title="plot 2")
+
 ```
 ![alt text](./docs/view_rand_array.png "Ephys viewer")
 
+
+Note if you are running through a script, you need to instantiate 
+the Qt application yourself:
+
+#### Opening a binary file through a script
+
+```python
+from viewephys.gui import EphysBinViewer, create_app
+
+app = create_app()
+
+viewer = EphysBinViewer(r"C:\Users\Joe\Desktop\1119617_LSE1_shank12_g0_imec0\1119617_LSE1_shank12_g0_t0.imec0.ap.bin")
+
+app.exec()
+```
+
+#### Load in a numpy array or slice through a script
+
+```python
+
+import numpy as np
+from viewephys.gui import viewephys, create_app
+
+app = create_app()
+
+nc, ns, fs = (384, 50000, 30000)  # this mimics one second of neuropixel data
+data = np.random.randn(nc, ns) / 1e6  # volts by default
+
+ve = viewephys(data, fs=fs)
+ve2 = viewephys(data * 50, fs=fs, title="plot 2")
+
+app.exec()
+
+```
 
 ## Contribution
 Fork and PR.
