@@ -1,3 +1,7 @@
+"""
+This example shows how to create an Ephys binary viewer from a script.
+This is an alternative to starting the viewer through the command line.
+"""
 from viewephys.gui import EphysBinViewer, create_app
 from pathlib import Path
 
