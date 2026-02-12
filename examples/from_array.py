@@ -1,5 +1,5 @@
 """
-This examlpe shows how to compaer the output of different
+This example shows how to compare the output of different
 SpikeInterface preprocessing steps in viewephys.
 """
 from viewephys.gui import viewephys, create_app
