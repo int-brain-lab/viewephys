@@ -1,7 +1,8 @@
-from viewephys.gui import EphysBinViewer
+from viewephys.gui import EphysBinViewer, create_app
 from pathlib import Path
 
-example_file_path = Path(__file__) / "example_bin" / "1119617_LSE1_shank12_g0_t0.imec0.ap"
+app = create_app()
 
-viewer = EphysBinViewer(example_file_path)
+viewer = EphysBinViewer(Path(__file__).parent / "example_bin" / "1119617_LSE1_shank12_g0_t0.imec0.ap.bin")
 
+app.exec()
