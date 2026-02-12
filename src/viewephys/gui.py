@@ -20,6 +20,9 @@ from ibldsp import voltage
 from iblutil.numerical import ismember
 from neuropixel import trace_header
 from qtpy import QtCore, QtGui, QtWidgets, uic
+import easyqc.qt
+from easyqc.gui import EasyQC
+import sys
 
 T_SCALAR = 1  # defaults s for user side
 A_SCALAR = 1e6  # defaults V for user side
@@ -41,6 +44,9 @@ SNS_PALETTE = [
     (0.09019607843137255, 0.7450980392156863, 0.8117647058823529),
 ]
 
+
+def create_app():
+    return easyqc.qt.create_app()
 
 class EphysBinViewer(QtWidgets.QMainWindow):
     def __init__(self, bin_file: str | Path | None = None, *args, **kwargs):
@@ -302,7 +308,6 @@ class PickSpikes:
 class EphysViewer(EasyQC):
     """
     A window to view an array of data.
-
     """
 
     keyPressed = QtCore.Signal(int)
@@ -513,7 +518,7 @@ def viewephys(
     :return:
     """
 
-    easyqc.qt.create_app()
+   # easyqc.qt.create_app()
     ev = EphysViewer._get_or_create(title=title)
 
     if channels is None:
