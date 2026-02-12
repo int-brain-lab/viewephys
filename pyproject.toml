@@ -59,9 +59,6 @@ viewephys = ["raster.ui", "nav_file.ui", "viewephys.svg"]
 [tool.mypy]
 exclude = ["tests/", "docs/", "examples/"]
 
-[[tool.mypy.overrides]]
-ignore_missing_imports = true
-
 [tool.ruff]
 line-length = 88
 exclude = ["__init__.py", "build", ".eggs"]
