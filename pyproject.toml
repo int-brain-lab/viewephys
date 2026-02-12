@@ -27,6 +27,19 @@ dependencies = [
     "pandas",
 ]
 
+
+[project.optional-dependencies]
+napari = ["napari[all]>=0.6.0"]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "coverage",
+  "mypy",
+  "pre-commit",
+  "ruff",
+  "codespell",
+]
+
 [project.urls]
 Homepage = "https://github.com/int-brain-lab/viewephys"
 "Bug Tracker" = "https://github.com/int-brain-lab/viewephys/issues"
@@ -42,3 +55,51 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 viewephys = ["raster.ui", "nav_file.ui", "viewephys.svg"]
+
+[tool.mypy]
+exclude = ["tests/", "docs/", "examples/"]
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 88
+exclude = ["__init__.py", "build", ".eggs"]
+fix = true
+
+[tool.ruff.lint]
+# See https://docs.astral.sh/ruff/rules/
+ignore = [
+  "D203", # one blank line before class
+  "D213", # multi-line-summary second line
+]
+select = [
+  "E",      # pycodestyle errors
+  "F",      # Pyflakes
+  "UP",     # pyupgrade
+  "I",      # isort
+  "B",      # flake8 bugbear
+  "SIM",    # flake8 simplify
+  "TC",     # flake8 type-checking
+  "C90",    # McCabe complexity
+#  "D",      # pydocstyle  For now, don't lint docstrings
+  "NPY201", # checks for syntax that was deprecated in numpy2.0
+]
+per-file-ignores = { "tests/*" = [
+  "D100", # missing docstring in public module
+  "D205", # missing blank line between summary and description
+  "D103", # missing docstring in public function
+], "examples/*" = [
+  "B018", # Found useless expression
+  "D103", # Missing docstring in public function
+  "D400", # first line should end with a period.
+  "D415", # first line should end with a period, question mark...
+  "D205", # missing blank line between summary and description
+] }
+
+[tool.ruff.format]
+docstring-code-format = true # Also format code in docstrings
+
+[tool.codespell]
+skip = '.git,.tox,*.svg,docs/source/community/people.md'
+check-hidden = true

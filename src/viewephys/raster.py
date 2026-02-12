@@ -1,24 +1,21 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Union
 
-import pandas as pd
 import numpy as np
-import scipy.signal
-
-from PyQt5 import QtWidgets, QtCore, QtGui, uic
+import one.alf.io as alfio
+import pandas as pd
 import pyqtgraph as pg
-
-from brainbox.processing import bincount2D
+import scipy.signal
+import spikeglx
 from brainbox.io.one import EphysSessionLoader
 from brainbox.io.spikeglx import Streamer
-import one.alf.io as alfio
-from one.alf.path import get_session_path
-import spikeglx
-from ibldsp import voltage
+from brainbox.processing import bincount2D
 from iblatlas.atlas import BrainRegions
+from ibldsp import voltage
+from one.alf.path import get_session_path
+from PyQt5 import QtCore, QtGui, QtWidgets, uic
 
-from viewephys.gui import viewephys, SNS_PALETTE
+from viewephys.gui import SNS_PALETTE, viewephys
 
 T_BIN = 0.007  # time bin size in secs
 D_BIN = 10  # depth bin size in um
@@ -64,14 +61,14 @@ def view_raster(bin_file):
 
 @dataclass
 class ProbeData:
-    spikes: Union[dict, pd.DataFrame]
-    clusters: Union[dict, pd.DataFrame]
-    channels: Union[dict, pd.DataFrame] = field(default_factory=dict)
-    trials: Union[dict, pd.DataFrame] = field(default_factory=dict)
-    sr: Union[spikeglx.Reader, Streamer, str, Path] = None
+    spikes: dict | pd.DataFrame
+    clusters: dict | pd.DataFrame
+    channels: dict | pd.DataFrame = field(default_factory=dict)
+    trials: dict | pd.DataFrame = field(default_factory=dict)
+    sr: spikeglx.Reader | Streamer | str | Path = None
 
     def __post_init__(self):
-        if isinstance(self.sr, str) or isinstance(self.sr, Path):
+        if isinstance(self.sr, (str, Path)):
             self.sr = spikeglx.Reader(self.ap_file)
         # TODO set the good units only ?
         # set the raster data
@@ -85,7 +82,7 @@ class ProbeData:
 class RasterView(QtWidgets.QMainWindow):
     def __init__(self, *args, **kwargs):
         self.eqcs = []
-        super(RasterView, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         # wave by Diana Militano from the Noun Projectp
         uic.loadUi(Path(__file__).parent.joinpath("raster.ui"), self)
         background_color = self.palette().color(self.backgroundRole())
@@ -229,7 +226,10 @@ class RasterView(QtWidgets.QMainWindow):
         self.eqc_des.viewBox_seismic.setXRange(*eqc_xrange)
         self.eqc_raw.viewBox_seismic.setXRange(*eqc_xrange)
 
-        # eqc2 = viewephys(butt - destripe, self.sr.fs, channels=None, br=None, title='diff')
+        # eqc2 = viewephys(
+        # butt - destripe, self.sr.fs, channels=None, br=None, title='diff'
+        # )
+
         # overlay spikes
         tprobe = self.data.spikes.samples / self.data.sr.fs
         slice_spikes = slice(

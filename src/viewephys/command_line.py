@@ -5,18 +5,20 @@ Command line interface to the viewephys GUI
 """
 
 import argparse
-import easyqc.qt
-from viewephys.gui import EphysBinViewer
-import sys
 import os
+import sys
+
+import easyqc.qt
+
+from viewephys.gui import EphysBinViewer
 
 os.environ["QT_MAC_WANTS_LAYER"] = "1"
 
 
 def viewephys():
     """
-    This command will open an empty GUI with a menu file that allows to load a flat binary
-    file readable by ibllib.io.spikeglx.Reader
+    This command will open an empty GUI with a menu file that allows to
+    load a flat binary file readable by ibllib.io.spikeglx.Reader
     :return:
     """
     parser = argparse.ArgumentParser(

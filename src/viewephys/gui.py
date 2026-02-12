@@ -1,17 +1,16 @@
 from pathlib import Path
 
-import pandas as pd
+import easyqc.qt
 import numpy as np
-import scipy.signal
+import pandas as pd
 import pyqtgraph as pg
-from PyQt5 import QtGui, QtWidgets, QtCore, uic
-
+import scipy.signal
 import spikeglx
-from neuropixel import trace_header
+from easyqc.gui import EasyQC
 from ibldsp import voltage
 from iblutil.numerical import ismember
-import easyqc.qt
-from easyqc.gui import EasyQC
+from neuropixel import trace_header
+from PyQt5 import QtCore, QtGui, QtWidgets, uic
 
 T_SCALAR = 1  # defaults s for user side
 A_SCALAR = 1e6  # defaults V for user side
@@ -40,7 +39,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         :param parent:
         :param sr: ibllib.io.spikeglx.Reader instance
         """
-        super(EphysBinViewer, self).__init__(*args, *kwargs)
+        super().__init__(*args, *kwargs)
         self.settings = QtCore.QSettings("int-brain-lab", "EphysBinViewer")
         uic.loadUi(Path(__file__).parent.joinpath("nav_file.ui"), self)
         self.setWindowIcon(
@@ -55,7 +54,12 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.horizontalSlider.valueChanged.connect(self.on_horizontalSliderValueChanged)
         self.label_smin.setText("0")
         self.show()
-        self.viewers = {"butterworth": None, "destripe": None, 'raw': None, 'broadband': None}
+        self.viewers = {
+            "butterworth": None,
+            "destripe": None,
+            "raw": None,
+            "broadband": None,
+        }
         self.cbs = {
             "butterworth": self.cb_butterworth_ap,
             "broadband": self.cb_butterworth_lf,
@@ -124,9 +128,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if not self.cbs[k].isChecked():
                 continue
             match k:
-                case 'raw':
+                case "raw":
                     data = raw
-                case 'destripe':
+                case "destripe":
                     data = fcn_destripe(
                         x=raw,
                         fs=self.sr.fs,
@@ -140,7 +144,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 case "broadband":
                     last = first + int(self.sr.fs * 3)
                     raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
-                    butter_kwargs = {"N": 3, "Wn": 2 / self.sr.fs * 2, "btype": "highpass"}
+                    butter_kwargs = {
+                        "N": 3,
+                        "Wn": 2 / self.sr.fs * 2,
+                        "btype": "highpass",
+                    }
                     sos = scipy.signal.butter(**butter_kwargs, output="sos")
                     data = scipy.signal.sosfiltfilt(sos, raw)
             self.viewers[k] = viewephys(
@@ -284,7 +292,8 @@ class EphysViewer(EasyQC):
 
     def add_header_times(self, times, name):
         """
-        Adds behaviour events in the horizontal header axes. Wra[s the add_header_curve method
+        Adds behaviour events in the horizontal header axes.
+        Wraps the add_header_curve method.
         :param times: np.array , vector of times
         :param name: string
         :return:
@@ -295,8 +304,8 @@ class EphysViewer(EasyQC):
 
     def add_header_curve(self, x, y, name):
         """
-        Adds a plot in the horizontal header axes linked to the image display. The x-axis
-        represents times and is linked to the image display
+        Adds a plot in the horizontal header axes linked to the image display.
+        The x-axis represents times and is linked to the image display
         :param x:
         :param y:
         :param name:
@@ -325,7 +334,7 @@ class EphysViewer(EasyQC):
             self.keyPressed.disconnect(self.on_key_picking_mode)
 
     def keyPressEvent(self, event):
-        super(EphysViewer, self).keyPressEvent(event)
+        super().keyPressEvent(event)
         self.keyPressed.emit(event.key())
 
     def on_key_picking_mode(self, key):
@@ -367,11 +376,13 @@ class EphysViewer(EasyQC):
 
             # --- Add a spike
             case QtCore.Qt.ControlModifier:
-                # the control modifier prevents wrapping around the nearby maximal voltage
+                # the control modifier prevents wrapping
+                # around the nearby maximal voltage
                 tmax, xmax = (int(round(s)), int(round(tr)))
 
             case _:
-                # if no key is pressed and click, automatic wrapping around the nearby maximal voltage
+                # if no key is pressed and click, automatic
+                # wrapping around the nearby maximal voltage
                 xscale = np.arange(-TR_RANGE, TR_RANGE + 1) + np.round(tr).astype(
                     np.int32
                 )

@@ -1,9 +1,10 @@
-from viewephys.raster import ProbeData
 import numpy as np
 import pandas as pd
 from brainbox.tests.test_metrics import multiple_spike_trains
-from neuropixel import trace_header
 from iblutil.util import Bunch
+from neuropixel import trace_header
+
+from viewephys.raster import ProbeData
 
 
 def test_model_dataclass():

@@ -16,4 +16,4 @@
 ### added
 - add spike groups in the picking interface
 - add the live recording option in the EphysBinViewer
-- 
+-

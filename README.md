@@ -56,7 +56,7 @@ data = np.random.randn(nc, ns) / 1e6  # volts by default
 ve = viewephys(data, fs=fs)
 ```
 ![alt text](./docs/view_rand_array.png "Ephys viewer")
-    
+
 
 ## Contribution
 Fork and PR.
