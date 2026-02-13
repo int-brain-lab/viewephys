@@ -1,6 +1,7 @@
-from viewephys.gui import PickSpikes
 import numpy as np
 import pandas as pd
+
+from viewephys.gui import PickSpikes
 
 ps = PickSpikes()
 DEFAULT_DF_COLUMNS = ["sample", "trace", "amp", "group"]

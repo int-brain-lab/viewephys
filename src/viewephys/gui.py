@@ -1,17 +1,25 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    import matplotlib
+
 from pathlib import Path
 
-import pandas as pd
+import easyqc.qt
 import numpy as np
-import scipy.signal
+import pandas as pd
 import pyqtgraph as pg
-from qtpy import QtGui, QtWidgets, QtCore, uic
-
+import scipy.signal
 import spikeglx
-from neuropixel import trace_header
+from easyqc.gui import EasyQC
 from ibldsp import voltage
 from iblutil.numerical import ismember
-import easyqc.qt
-from easyqc.gui import EasyQC
+from neuropixel import trace_header
+from qtpy import QtCore, QtGui, QtWidgets, uic
 
 T_SCALAR = 1  # defaults s for user side
 A_SCALAR = 1e6  # defaults V for user side
@@ -35,12 +43,19 @@ SNS_PALETTE = [
 
 
 class EphysBinViewer(QtWidgets.QMainWindow):
-    def __init__(self, bin_file=None, *args, **kwargs):
+    def __init__(self, bin_file: str | Path | None = None, *args, **kwargs):
         """
+        Class for viewing a binary file output from SpikeGLX.
+
+        This window gives the options for viewing the data at
+        certain timepoints under different IBL preprocessing steps.
+        When timepoint and processing steps are selected, it will
+        spawn EphysViewer windows displaying the data.
+
         :param parent:
         :param sr: ibllib.io.spikeglx.Reader instance
         """
-        super(EphysBinViewer, self).__init__(*args, *kwargs)
+        super().__init__(*args, *kwargs)
         self.settings = QtCore.QSettings("int-brain-lab", "EphysBinViewer")
         uic.loadUi(Path(__file__).parent.joinpath("nav_file.ui"), self)
         self.setWindowIcon(
@@ -55,7 +70,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.horizontalSlider.valueChanged.connect(self.on_horizontalSliderValueChanged)
         self.label_smin.setText("0")
         self.show()
-        self.viewers = {"butterworth": None, "destripe": None, 'raw': None, 'broadband': None}
+
+        self.viewers: dict[str, EphysViewer | None]
+        self.viewers = {
+            "butterworth": None,
+            "destripe": None,
+            "raw": None,
+            "broadband": None,
+        }
         self.cbs = {
             "butterworth": self.cb_butterworth_ap,
             "broadband": self.cb_butterworth_lf,
@@ -65,10 +87,21 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if bin_file is not None:
             self.open_file(file=bin_file)
 
-    def open_file_live(self, *args, **kwargs):
+    def open_file_live(self, *args, **kwargs) -> None:
+        """
+        Open a 'live' SpikeGLX recording, used for streaming during data collection.
+        """
         self.open_file(*args, live=True, **kwargs)
 
-    def open_file(self, *args, live=False, file=None):
+    def open_file(
+        self, *args, live: bool = False, file: str | Path | None = None
+    ) -> None:
+        """
+        Open a SpikeGLX binary file.
+
+        :param live: Whether the binary file is currently being recorded in SpileGLX
+        :param file: Full filepath to the file to open.
+        """
         if file is None:
             file, _ = QtWidgets.QFileDialog.getOpenFileName(
                 parent=self,
@@ -76,8 +109,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 directory=self.settings.value("bin_file_path"),
                 filter="Electrophysiology files (*.*bin *.dat)",
             )
-        if file == "":
-            return
+            if file == "":
+                return
         file = Path(file)
         self.settings.setValue("bin_file_path", str(file.parent))
         ReaderClass = spikeglx.Reader if not live else spikeglx.OnlineReader
@@ -87,7 +120,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             self.sr = spikeglx.Reader(
                 file, dtype="int16", nc=384, fs=30000, ns=file.stat().st_size / 384 / 2
             )
-        # enable and set slider
+        # enable and set slider, based on the number of samples in the entire file
         self.horizontalSlider.setMaximum(int(np.floor(self.sr.ns / NSAMP_CHUNK)))
         tmax = np.floor(self.sr.ns / NSAMP_CHUNK) * NSAMP_CHUNK / self.sr.fs
         self.label_smax.setText(f"{tmax:0.2f}s")
@@ -104,14 +137,27 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.horizontalSlider.setEnabled(True)
         self.on_horizontalSliderReleased()
 
-    def on_horizontalSliderValueChanged(self):
+    def on_horizontalSliderValueChanged(self) -> None:
         tcur = self.horizontalSlider.value() * NSAMP_CHUNK / self.sr.fs
         self.label_sval.setText(f"{tcur:0.2f}s")
 
-    def on_horizontalSliderReleased(self):
+    def on_horizontalSliderReleased(self) -> None:
+        """
+        Open EphysViewer windows at the selected timepoint
+        for the selected preprocessing steps.
+
+        The horizontal slider allows the user to select the timepoint
+        at which they would like to see the data. This will open EphysVeiewer
+        windows at a window starting at that time point.
+
+        Depending on the selected preprocessing steps, open a number of
+        viewers (one for each selected preprocessing step) to display the
+        preprocessed data at the selected timepoint.
+        """
         first = int(float(self.horizontalSlider.value()) * NSAMP_CHUNK)
         last = first + int(NSAMP_CHUNK)
         raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
+
         # get parameters for both AP and LFP band
         t0 = first / self.sr.fs * 0
         if self.sr.type == "lf":
@@ -120,13 +166,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         else:
             butter_kwargs = {"N": 3, "Wn": 300 / self.sr.fs * 2, "btype": "highpass"}
             fcn_destripe = voltage.destripe
+
+        # For each preprocessing step, create an EphysViewer
         for k in self.viewers:
             if not self.cbs[k].isChecked():
                 continue
             match k:
-                case 'raw':
+                case "raw":
                     data = raw
-                case 'destripe':
+                case "destripe":
                     data = fcn_destripe(
                         x=raw,
                         fs=self.sr.fs,
@@ -140,9 +188,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 case "broadband":
                     last = first + int(self.sr.fs * 3)
                     raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
-                    butter_kwargs = {"N": 3, "Wn": 2 / self.sr.fs * 2, "btype": "highpass"}
+                    butter_kwargs = {
+                        "N": 3,
+                        "Wn": 2 / self.sr.fs * 2,
+                        "btype": "highpass",
+                    }
                     sos = scipy.signal.butter(**butter_kwargs, output="sos")
                     data = scipy.signal.sosfiltfilt(sos, raw)
+
             self.viewers[k] = viewephys(
                 data,
                 self.sr.fs,
@@ -153,7 +206,13 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 a_scalar=A_SCALAR,
             )
 
-    def closeEvent(self, event):
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        """
+        Close EphysBinViewer, ensuring all subwindows are cleared.
+
+        TODO: if we set the EphysViewer windows as children of
+        this window, Qt will automatically handle the window close.
+        """
         for k in self.viewers:
             ev = self.viewers[k]
             if ev is not None:
@@ -162,11 +221,13 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
 
 class PickSpikes:
-    def __init__(self):
+    """ """
+
+    def __init__(self) -> None:
         default_df = self.init_df()
         self.update_pick(default_df)
 
-    def init_df(self, nrow=0):
+    def init_df(self, nrow: int = 0) -> pd.DataFrame:
         init_df = pd.DataFrame(
             {
                 "sample": np.zeros(nrow, dtype=np.int32),
@@ -177,12 +238,12 @@ class PickSpikes:
         )
         return init_df
 
-    def update_pick(self, df):
+    def update_pick(self, df: pd.DataFrame) -> None:
         self.picks = df
         self.pick_index = df.shape[0]  # Last index of spike picked (== len of df table)
         self.pick_group = df["group"].max()  # Last group created
 
-    def load_df(self, df):
+    def load_df(self, df: pd.DataFrame) -> None:
         """
         Load a dataframe that contains already picked spikes
         :return:
@@ -208,7 +269,7 @@ class PickSpikes:
         new_row["group"] = group
         return new_row
 
-    def add_spike(self, new_row):
+    def add_spike(self, new_row: pd.DataFrame) -> None:
         df = self.picks
         # Check columns of new row
         indxmissing = np.where(~df.columns.isin(new_row.columns))[0]
@@ -221,7 +282,7 @@ class PickSpikes:
         df_updated = df_updated.reset_index(drop=True)
         self.update_pick(df_updated)
 
-    def remove_spike(self, indx_remove):
+    def remove_spike(self, indx_remove: Sequence[int]) -> None:
         df = self.picks
         if df.shape[0] > 0 and len(indx_remove) > 0:  # Update only if non-empty
             df_updated = df.drop(indx_remove).copy()
@@ -239,14 +300,21 @@ class PickSpikes:
 
 
 class EphysViewer(EasyQC):
+    """
+    A window to view an array of data.
+
+    """
+
     keyPressed = QtCore.Signal(int)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
         self.ctrl.model.pickspikes = PickSpikes()
         self.menufile.setEnabled(True)
         self.settings = QtCore.QSettings("int-brain-lab", "EphysViewer")
+
+        self.header_curves: dict
         self.header_curves = {}
         # menus handling
         # menu pick
@@ -263,7 +331,7 @@ class EphysViewer(EasyQC):
         self.show()
 
     @staticmethod
-    def _get_or_create(title=None):
+    def _get_or_create(title=None) -> EphysViewer:
         ev = next(
             filter(
                 lambda e: e.isVisible() and e.windowTitle() == title,
@@ -276,15 +344,16 @@ class EphysViewer(EasyQC):
             ev.setWindowTitle(title)
         return ev
 
-    def rm_header_curve(self, name):
+    def rm_header_curve(self, name) -> None:
         if name not in self.header_curves:
             return
         curve = self.header_curves.pop(name)
         self.plotItem_header_h.removeItem(curve)
 
-    def add_header_times(self, times, name):
+    def add_header_times(self, times: np.ndarray, name: str) -> None:
         """
-        Adds behaviour events in the horizontal header axes. Wra[s the add_header_curve method
+        Adds behaviour events in the horizontal header axes.
+        Wraps the add_header_curve method.
         :param times: np.array , vector of times
         :param name: string
         :return:
@@ -293,10 +362,10 @@ class EphysViewer(EasyQC):
         x = np.tile(times[:, np.newaxis] * T_SCALAR, 3).flatten()
         self.add_header_curve(x, y, name)
 
-    def add_header_curve(self, x, y, name):
+    def add_header_curve(self, x: np.ndarray, y: np.ndarray, name: str) -> None:
         """
-        Adds a plot in the horizontal header axes linked to the image display. The x-axis
-        represents times and is linked to the image display
+        Adds a plot in the horizontal header axes linked to the image display.
+        The x-axis represents times and is linked to the image display
         :param x:
         :param y:
         :param name:
@@ -311,7 +380,7 @@ class EphysViewer(EasyQC):
         )
         self.plotItem_header_h.addItem(self.header_curves[name])
 
-    def menu_pick_callback(self, event):
+    def menu_pick_callback(self, event: bool) -> None:
         # disable the picking
         if self.action_pick.isChecked():
             self.viewBox_seismic.scene().sigMouseClicked.connect(
@@ -324,11 +393,11 @@ class EphysViewer(EasyQC):
             )
             self.keyPressed.disconnect(self.on_key_picking_mode)
 
-    def keyPressEvent(self, event):
-        super(EphysViewer, self).keyPressEvent(event)
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        super().keyPressEvent(event)
         self.keyPressed.emit(event.key())
 
-    def on_key_picking_mode(self, key):
+    def on_key_picking_mode(self, key: QtCore.Qt.Key):
         """
         When the pick action is enabled this is triggered on key press
         """
@@ -336,7 +405,7 @@ class EphysViewer(EasyQC):
             case QtCore.Qt.Key.Key_Space:
                 self.ctrl.model.pick_group += 1
 
-    def mouseClickPickingEvent(self, event):
+    def mouseClickPickingEvent(self, event: pg.MouseClickEvent) -> None:
         """
         When the pick action is enabled this is triggered on mouse click
         - left button click sets a point
@@ -367,11 +436,13 @@ class EphysViewer(EasyQC):
 
             # --- Add a spike
             case QtCore.Qt.ControlModifier:
-                # the control modifier prevents wrapping around the nearby maximal voltage
+                # the control modifier prevents wrapping
+                # around the nearby maximal voltage
                 tmax, xmax = (int(round(s)), int(round(tr)))
 
             case _:
-                # if no key is pressed and click, automatic wrapping around the nearby maximal voltage
+                # if no key is pressed and click, automatic
+                # wrapping around the nearby maximal voltage
                 xscale = np.arange(-TR_RANGE, TR_RANGE + 1) + np.round(tr).astype(
                     np.int32
                 )
@@ -387,7 +458,7 @@ class EphysViewer(EasyQC):
                 if out_of_time_range or out_of_tr_range:
                     print(xscale, tscale)
                     return
-                tmax, xmax = np.unravel_index(
+                tmax, xmax = np.unravel_index(  # type: ignore
                     np.argmax(np.abs(self.ctrl.model.data[it, ix])),
                     (S_RANGE * 2 + 1, TR_RANGE * 2 + 1),
                 )
@@ -411,7 +482,7 @@ class EphysViewer(EasyQC):
             rgb=PICK_COLOR,
         )
 
-    def save_current_plot(self, filename):
+    def save_current_plot(self, filename: str) -> None:
         """
         Saves only the currently shown plot to `filename`.
         :param filename:
@@ -421,17 +492,18 @@ class EphysViewer(EasyQC):
 
 
 def viewephys(
-    data,
-    fs,
-    channels=None,
-    br=None,
-    title="ephys",
-    t0=0,
-    t_scalar=T_SCALAR,
-    a_scalar=A_SCALAR,
-    colormap=None,
+    data: np.ndarray,
+    fs: float,
+    channels: dict | None = None,
+    br=None,  # TODO: is this brain region?
+    title: str = "ephys",
+    t0: float = 0.0,
+    t_scalar: float = T_SCALAR,
+    a_scalar: float = A_SCALAR,
+    colormap: str | pg.ColorMap | matplotlib.colors.Colormap | None = None,
 ) -> EphysViewer:
     """
+    Create an EphysViewer window to display an array of data.
     :param data: [nc, ns]
     :param fs:
     :param channels: dictionary of trace headers (nc, ) or dataframe (nc, ncolumns)
@@ -446,6 +518,7 @@ def viewephys(
 
     if channels is None:
         channels = trace_header(version=1)
+
     if data is not None:
         ev.ctrl.update_data(
             data.T * a_scalar, si=1 / fs * t_scalar, h=channels, taxis=0, t0=t0
@@ -463,4 +536,5 @@ def viewephys(
     ev.show()
     if colormap is not None:
         ev.setColorMap(colormap)
+
     return ev
