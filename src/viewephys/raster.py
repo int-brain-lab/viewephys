@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import scipy.signal
 
-from PyQt5 import QtWidgets, QtCore, QtGui, uic
+from qtpy import QtWidgets, QtCore, QtGui, uic
 import pyqtgraph as pg
 
 from brainbox.processing import bincount2D

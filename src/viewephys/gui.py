@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import scipy.signal
 import pyqtgraph as pg
-from PyQt5 import QtGui, QtWidgets, QtCore, uic
+from qtpy import QtGui, QtWidgets, QtCore, uic
 
 import spikeglx
 from neuropixel import trace_header
@@ -239,7 +239,7 @@ class PickSpikes:
 
 
 class EphysViewer(EasyQC):
-    keyPressed = QtCore.pyqtSignal(int)
+    keyPressed = QtCore.Signal(int)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
