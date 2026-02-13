@@ -25,11 +25,10 @@ dependencies = [
     "ibllib",
     "iblutil>=1.6.0",
     "pandas",
+    "qtpy",
 ]
 
-
 [project.optional-dependencies]
-napari = ["napari[all]>=0.6.0"]
 dev = [
   "pytest",
   "pytest-cov",
@@ -39,6 +38,11 @@ dev = [
   "ruff",
   "codespell",
 ]
+pyqt5 = ["PyQt5>=5.15.0"]
+pyqt6 = ["PyQt6>=6.2.0"]
+pyside2 = ["PySide2>=5.15.0"]
+pyside6 = ["PySide6>=6.2.0"]
+qt = ["PyQt5>=5.15.0"]  # Default to PyQt5 for backward compatibility
 
 [project.urls]
 Homepage = "https://github.com/int-brain-lab/viewephys"

@@ -4,6 +4,8 @@ from pathlib import Path
 import numpy as np
 import one.alf.io as alfio
 import pandas as pd
+import scipy.signal
+from qtpy import QtWidgets, QtCore, QtGui, uic
 import pyqtgraph as pg
 import scipy.signal
 import spikeglx

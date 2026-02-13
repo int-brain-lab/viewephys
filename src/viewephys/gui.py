@@ -13,7 +13,12 @@ import easyqc.qt
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
+<<<<<<< HEAD
 import scipy.signal
+=======
+from qtpy import QtGui, QtWidgets, QtCore, uic
+
+>>>>>>> main
 import spikeglx
 from easyqc.gui import EasyQC
 from ibldsp import voltage
@@ -305,8 +310,7 @@ class EphysViewer(EasyQC):
 
     """
 
-    keyPressed = QtCore.pyqtSignal(int)
-
+    keyPressed = QtCore.Signal(int)
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
