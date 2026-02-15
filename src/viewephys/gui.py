@@ -520,9 +520,8 @@ def viewephys(
         channels = trace_header(version=1)
 
     if data is not None:
-        ev.ctrl.update_data(
-            data.T * a_scalar, si=1 / fs * t_scalar, h=channels, taxis=0, t0=t0
-        )
+        ev.model.set_data(data.T * a_scalar, si=1 / fs, header=channels, t0=t0, taxis=0)
+        ev.ctrl.set_model()
     if br is not None and "atlas_id" in channels:
         _, ir = ismember(channels["atlas_id"], br.id)
         image = br.rgb[ir].astype(np.uint8)
