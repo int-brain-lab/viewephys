@@ -65,8 +65,7 @@ Pypi Release checklist:
 ```shell
 ruff check
 rm -fR dist
-rm -fR build
-python -m build
-twine upload dist/*
+rm -fR .pdm-build
+pdm publish
 #twine upload --repository-url https://test.pypi.org/legacy/ dist/*
 ```

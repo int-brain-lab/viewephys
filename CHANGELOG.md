@@ -1,10 +1,12 @@
 # Changelog
 
-## [1.1.0] 2026-02-16
+## [1.1.1] 2026-02-16
 
 ### added
 - option for unfiltered data and LFP filtered data in file viewer
 - Wiggle display option via EasyQC 1.3.0
+
+## [1.1.0 YANKED pdm distribution]  2026-02-16
 
 ## [1.0.1] - 2024-12-06
 
