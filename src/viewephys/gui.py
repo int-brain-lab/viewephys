@@ -67,6 +67,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         super().__init__(*args, *kwargs)
         self.shank_idx = shank_idx
         self.settings = QtCore.QSettings("int-brain-lab", "EphysBinViewer")
+        self.sorting_dict : dict | None = None
+
         uic.loadUi(Path(__file__).parent.joinpath("nav_file.ui"), self)
         self.setWindowIcon(
             QtGui.QIcon(str(Path(__file__).parent.joinpath("viewephys.svg")))
@@ -130,6 +132,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             self.sr = spikeglx.Reader(
                 file, dtype="int16", nc=384, fs=30000, ns=file.stat().st_size / 384 / 2
             )
+            
+        
         # enable and set slider, based on the number of samples in the entire file
         self.horizontalSlider.setMaximum(int(np.floor(self.sr.ns / NSAMP_CHUNK)))
         tmax = np.floor(self.sr.ns / NSAMP_CHUNK) * NSAMP_CHUNK / self.sr.fs
@@ -166,6 +170,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         """
         first = int(float(self.horizontalSlider.value()) * NSAMP_CHUNK)
         last = first + int(NSAMP_CHUNK)
+
+        breakpoint()
         raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
 
         if self.shank_idx is not None:
@@ -223,6 +229,21 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 a_scalar=A_SCALAR,
             )
 
+            if self.sorting_dict is not None:
+
+                ind_to_keep = np.searchsorted(self.sorting_dict["spike_times"], [first, last])
+
+                i_start, i_end = ind_to_keep
+
+                unit_ids = self.sorting_dict["unit_ids"][slice(i_start, i_end)] if self.sorting_dict["unit_ids"] is not None else None
+
+                sorting_dict = {
+                    "unit_ids": unit_ids,
+                    "spike_times": self.sorting_dict["spike_times"][slice(i_start, i_end)] - first, # TODO: check off-by-one
+                    "spike_positions":  self.sorting_dict["spike_positions"][slice(i_start, i_end)] # TODO: check off-by-one TODO y-channel conversion
+                }
+                self.viewers[k].attach_sorting(sorting_dict)
+
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         """
         Close EphysBinViewer, ensuring all subwindows are cleared.
@@ -235,6 +256,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if ev is not None:
                 ev.close()
         self.close()
+
+    def attach_sorting(self, sorting_dict:dict):   # TODO: RENAME
+        self.sorting_dict = sorting_dict
 
 
 class PickSpikes:
@@ -330,6 +354,8 @@ class EphysViewer(EasyQC):
         self.ctrl.model.pickspikes = PickSpikes()
         self.menufile.setEnabled(True)
         self.settings = QtCore.QSettings("int-brain-lab", "EphysViewer")
+
+        self.sorting_dict: dict | None = None
 
         self.header_curves: dict
         self.header_curves = {}
@@ -506,6 +532,31 @@ class EphysViewer(EasyQC):
         :return:
         """
         self.plotItem_seismic.grab().save(filename)
+
+    def attach_sorting(self, sorting_dict: dict):
+        self.sorting_dict = sorting_dict
+        self.view_sorting_spikes()
+
+    def view_sorting_spikes(self):
+        """
+        """
+        if self.sorting_dict["unit_ids"] is not None:
+            colors = {}
+            for unit in np.unique(self.sorting_dict["unit_ids"]):
+                gen = np.random.default_rng(seed=unit)
+                colors[unit] = np.r_[gen.uniform(0.0, 0.5, 3) * 255, 255]
+            spike_colors = [colors[unit] for unit in self.sorting_dict["unit_ids"]]
+        else:
+            spike_colors = (125, 125, 125)
+
+        # display spikes
+        self.ctrl.add_scatter(
+            x=self.sorting_dict["spike_times"] * self.ctrl.model.si,
+            y=self.sorting_dict["spike_positions"],
+            brush=spike_colors,
+            pen=(0, 0, 0, 0),
+            size=10
+        )
 
 
 def viewephys(
