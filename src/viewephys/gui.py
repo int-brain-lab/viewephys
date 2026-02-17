@@ -168,9 +168,10 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         last = first + int(NSAMP_CHUNK)
         raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
 
-        shank_ids = self.sr.geometry["shank"][: self.sr.nc - self.sr.nsync]
         if self.shank_idx is not None:
             assert isinstance(self.shank_idx, int), "`shank_idx` must be an `int`."
+            
+            shank_ids = self.sr.geometry["shank"][: self.sr.nc - self.sr.nsync]
             shank_mask = shank_ids == self.shank_idx
             raw = raw[shank_mask, :]
 
