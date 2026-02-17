@@ -2,10 +2,11 @@
 This example shows how to compare the output of different
 SpikeInterface preprocessing steps in viewephys.
 """
-from viewephys.gui import viewephys, create_app
-from pathlib import Path
+
 import spikeinterface.extractors as si_extractors
 import spikeinterface.preprocessing as si_prepro
+
+from viewephys.gui import create_app, viewephys
 
 # we must create the app before creating the viewephys windows
 app = create_app()

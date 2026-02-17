@@ -1,6 +1,6 @@
 # Examples
 
-This contains a  number of examples for working with `viewewphys`. 
+This contains a  number of examples for working with `viewewphys`.
 
 `from_binary.py` : How to load a binary file into `viewephys`
 
