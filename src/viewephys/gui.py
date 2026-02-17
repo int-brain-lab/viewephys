@@ -42,6 +42,10 @@ SNS_PALETTE = [
 ]
 
 
+def create_app():
+    return easyqc.qt.create_app()
+
+
 class EphysBinViewer(QtWidgets.QMainWindow):
     def __init__(self, bin_file: str | Path | None = None, *args, **kwargs):
         """
@@ -302,7 +306,6 @@ class PickSpikes:
 class EphysViewer(EasyQC):
     """
     A window to view an array of data.
-
     """
 
     keyPressed = QtCore.Signal(int)
@@ -513,7 +516,7 @@ def viewephys(
     :return:
     """
 
-    easyqc.qt.create_app()
+    # easyqc.qt.create_app()
     ev = EphysViewer._get_or_create(title=title)
 
     if channels is None:
