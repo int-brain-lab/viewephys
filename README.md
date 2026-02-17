@@ -49,7 +49,7 @@ viewphys -f /path/to/raw.bin
 ### Load in a numpy array or slice
 
 `viewephys` can be used through the Python console or iPython, allowing you to create
-multiple instances of the viewer at once. 
+multiple instances of the viewer at once.
 
 
 ```python
@@ -68,7 +68,7 @@ ve2 = viewephys(data, fs=fs, title="plot 2")
 ![alt text](./docs/view_rand_array.png "Ephys viewer")
 
 
-Note if you are running through a script, you need to instantiate 
+Note if you are running through a script, you need to instantiate
 the Qt application yourself:
 
 #### Opening a binary file through a script
