@@ -43,7 +43,16 @@ SNS_PALETTE = [
 
 
 class EphysBinViewer(QtWidgets.QMainWindow):
-    def __init__(self, bin_file: str | Path | None = None, *args, **kwargs):
+    def __init__(
+        self,
+        bin_file: str | Path | None = None,
+        shank_idx: int | None = None,
+        sorting_path: Path | str | None = None,
+        sorting_shank_idx: int
+        | None = None,  # TODO: this must be set if `sorting_path` is, must be a better way
+        *args,
+        **kwargs,
+    ):
         """
         Class for viewing a binary file output from SpikeGLX.
 
@@ -52,11 +61,20 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         When timepoint and processing steps are selected, it will
         spawn EphysViewer windows displaying the data.
 
+        :param bin_file: Path to the binary file to load
+        :param shank_idx: If not `None`, an integer indicating the shank to
+            select for display.
         :param parent:
         :param sr: ibllib.io.spikeglx.Reader instance
         """
         super().__init__(*args, *kwargs)
+        self.shank_idx = shank_idx
         self.settings = QtCore.QSettings("int-brain-lab", "EphysBinViewer")
+        self.sorting_path: Path | None = (
+            Path(sorting_path) if sorting_path is not None else None
+        )
+        self.sorting_shank_idx: int | None = sorting_shank_idx
+
         uic.loadUi(Path(__file__).parent.joinpath("nav_file.ui"), self)
         self.setWindowIcon(
             QtGui.QIcon(str(Path(__file__).parent.joinpath("viewephys.svg")))
@@ -120,6 +138,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             self.sr = spikeglx.Reader(
                 file, dtype="int16", nc=384, fs=30000, ns=file.stat().st_size / 384 / 2
             )
+
         # enable and set slider, based on the number of samples in the entire file
         self.horizontalSlider.setMaximum(int(np.floor(self.sr.ns / NSAMP_CHUNK)))
         tmax = np.floor(self.sr.ns / NSAMP_CHUNK) * NSAMP_CHUNK / self.sr.fs
@@ -156,7 +175,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         """
         first = int(float(self.horizontalSlider.value()) * NSAMP_CHUNK)
         last = first + int(NSAMP_CHUNK)
+
         raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
+
+        if self.shank_idx is not None:
+            assert isinstance(self.shank_idx, int), "`shank_idx` must be an `int`."
+
+            shank_ids = self.sr.geometry["shank"][: self.sr.nc - self.sr.nsync]
+            shank_mask = shank_ids == self.shank_idx
+            raw = raw[shank_mask, :]
 
         # get parameters for both AP and LFP band
         t0 = first / self.sr.fs * 0
@@ -205,6 +232,102 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 t_scalar=T_SCALAR,
                 a_scalar=A_SCALAR,
             )
+
+            # TODO: this is rough
+            if self.sorting_path is not None:
+                num_shanks = np.unique(self.sr.geometry["shank"]).size
+                num_channels = self.sr.nc - self.sr.nsync
+                chan_per_shank = (
+                    num_channels / num_shanks
+                )  # TODO: check this will work even when bad channels removed
+
+                # TODO: if KS < 4, we will need to infer spike positions
+                # from the template positions
+                spike_times = np.load(self.sorting_path / "spike_times.npy")
+                ind_to_keep = np.searchsorted(spike_times, [first, last])
+                slice_indicies = slice(ind_to_keep[0], ind_to_keep[1])
+
+                spike_times = spike_times[slice_indicies] - first
+                unit_ids = np.load(self.sorting_path / "spike_clusters.npy")[
+                    slice_indicies
+                ]  # TODO: check off-by-one
+                spike_positions = np.load(self.sorting_path / "spike_positions.npy")[
+                    slice_indicies
+                ]
+                spike_positions_x = spike_positions[:, 0]
+                spike_positions_y = spike_positions[:, 1]
+
+                # scale the positions (um) to shank. This isn't quite accurate
+                # because the channels are columns. We could assign the closest
+                # column and map directly to the channel but this would be slow and still
+                # weird. The fundamental problem is the channel axis and the continous
+                # spatial axis are distinct. For visualisation purposes, this slight
+                # error is fine.
+
+                # chan_x = self.sr.geometry["x"] TODO: why does this give (59, 27) repeat for our 4-shank probe
+                chan_y = self.sr.geometry["y"]
+                min_probe_y = np.min(chan_y)
+                max_probe_y = np.max(chan_y)
+
+                scale = (max_probe_y - min_probe_y) / chan_per_shank
+
+                spike_positions_idx = (spike_positions_y - min_probe_y) / scale
+
+                # Need a way to allow default self.sorting_shank_idx = None but
+                # check that if it is None but the data was sorted by shank, its wrong..? or just force user.
+
+                if num_shanks > 1:
+                    # Note only need to do this if num_shanks > 1
+                    if self.shank_idx is None and self.sorting_shank_idx is None:
+                        # If the file is multi-shank and the sorting is multi-shank,
+                        # we need to offset each spike by its shank
+                        channel_locations_x = np.load(
+                            self.sorting_path / "channel_positions.npy"
+                        )[:, 0]
+                        x_loc_bin_edges = np.unique(channel_locations_x)
+                        spike_shank_idx = np.digitize(
+                            spike_positions_x, x_loc_bin_edges[1::2], right=True
+                        )
+                        spike_positions_idx += spike_shank_idx * chan_per_shank
+
+                    elif self.shank_idx is not None and self.sorting_shank_idx is None:
+                        # If the file is a single shank, but the sorting is all shanks,
+                        # we should only include the spikes from the relevant shank
+                        channel_locations_x = np.load(
+                            self.sorting_path / "channel_positions.npy"
+                        )[:, 0]
+                        x_loc_bin_edges = np.unique(channel_locations_x)
+                        spike_shank_idx = np.digitize(
+                            spike_positions_x, x_loc_bin_edges[1::2], right=True
+                        )
+                        to_keep = spike_shank_idx == self.shank_idx
+                        spike_positions_idx = spike_positions_idx[to_keep]
+                        unit_ids = unit_ids[to_keep]
+                        spike_times = spike_times[to_keep]
+
+                    elif self.shank_idx is None and self.sorting_shank_idx is not None:
+                        # The file is multi-shank, but the sorting is from a single shank
+                        # We just need to offset the spike positions so they are shifted
+                        # up to the correct shank
+                        spike_positions_idx += self.sorting_shank_idx * chan_per_shank
+
+                    elif (
+                        self.shank_idx is not None
+                        and self.sorting_shank_idx is not None
+                    ):
+                        # The file is single-shank and the sorting is single-shank. We just
+                        # need to check that the shanks match.
+                        if not self.shank_idx == self.sorting_shank_idx:
+                            raise ValueError(
+                                "The shank of the sorting must match the displayed shank."
+                            )
+
+                sorting_path = {
+                    "unit_ids": unit_ids,
+                    "spike_times": spike_times,
+                    "spike_positions_y": spike_positions_idx,  # TODO: naming
+                }
+                self.viewers[k].attach_sorting(sorting_path)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         """
@@ -313,6 +436,8 @@ class EphysViewer(EasyQC):
         self.ctrl.model.pickspikes = PickSpikes()
         self.menufile.setEnabled(True)
         self.settings = QtCore.QSettings("int-brain-lab", "EphysViewer")
+
+        self.sorting_dict: dict | None = None
 
         self.header_curves: dict
         self.header_curves = {}
@@ -489,6 +614,30 @@ class EphysViewer(EasyQC):
         :return:
         """
         self.plotItem_seismic.grab().save(filename)
+
+    def attach_sorting(self, sorting_dict: dict):
+        self.sorting_dict = sorting_dict
+        self.view_sorting_spikes()
+
+    def view_sorting_spikes(self):
+        """ """
+        if self.sorting_dict["unit_ids"] is not None:
+            colors = {}
+            for unit in np.unique(self.sorting_dict["unit_ids"]):
+                gen = np.random.default_rng(seed=unit)
+                colors[unit] = np.r_[gen.uniform(0.5, 0.80, 3) * 255, 255]
+            spike_colors = [colors[unit] for unit in self.sorting_dict["unit_ids"]]
+        else:
+            spike_colors = (125, 125, 125)
+
+        # display spikes
+        self.ctrl.add_scatter(
+            x=self.sorting_dict["spike_times"] * self.ctrl.model.si,
+            y=self.sorting_dict["spike_positions_y"],
+            brush=spike_colors,
+            pen=(0, 0, 0, 0),
+            size=10,
+        )
 
 
 def viewephys(
