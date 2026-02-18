@@ -43,7 +43,13 @@ SNS_PALETTE = [
 
 
 class EphysBinViewer(QtWidgets.QMainWindow):
-    def __init__(self, bin_file: str | Path | None = None, *args, **kwargs):
+    def __init__(
+        self,
+        bin_file: str | Path | None = None,
+        shank_idx: int | None = None,
+        *args,
+        **kwargs,
+    ):
         """
         Class for viewing a binary file output from SpikeGLX.
 
@@ -52,10 +58,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         When timepoint and processing steps are selected, it will
         spawn EphysViewer windows displaying the data.
 
+        :param bin_file: Path to the binary file to load
+        :param shank_idx: If not `None`, an integer indicating the shank to
+            select for display.
         :param parent:
         :param sr: ibllib.io.spikeglx.Reader instance
         """
         super().__init__(*args, *kwargs)
+        self.shank_idx = shank_idx
         self.settings = QtCore.QSettings("int-brain-lab", "EphysBinViewer")
         uic.loadUi(Path(__file__).parent.joinpath("nav_file.ui"), self)
         self.setWindowIcon(
@@ -157,6 +167,13 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         first = int(float(self.horizontalSlider.value()) * NSAMP_CHUNK)
         last = first + int(NSAMP_CHUNK)
         raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
+
+        if self.shank_idx is not None:
+            assert isinstance(self.shank_idx, int), "`shank_idx` must be an `int`."
+
+            shank_ids = self.sr.geometry["shank"][: self.sr.nc - self.sr.nsync]
+            shank_mask = shank_ids == self.shank_idx
+            raw = raw[shank_mask, :]
 
         # get parameters for both AP and LFP band
         t0 = first / self.sr.fs * 0
