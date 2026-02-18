@@ -171,7 +171,6 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         first = int(float(self.horizontalSlider.value()) * NSAMP_CHUNK)
         last = first + int(NSAMP_CHUNK)
 
-        breakpoint()
         raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
 
         if self.shank_idx is not None:
@@ -228,8 +227,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 t_scalar=T_SCALAR,
                 a_scalar=A_SCALAR,
             )
-
+            
+            # TODO: this is rough
             if self.sorting_dict is not None:
+                if self.shank
+                
+                
+                breakpoint()
+
 
                 ind_to_keep = np.searchsorted(self.sorting_dict["spike_times"], [first, last])
 
@@ -544,7 +549,7 @@ class EphysViewer(EasyQC):
             colors = {}
             for unit in np.unique(self.sorting_dict["unit_ids"]):
                 gen = np.random.default_rng(seed=unit)
-                colors[unit] = np.r_[gen.uniform(0.0, 0.5, 3) * 255, 255]
+                colors[unit] = np.r_[gen.uniform(0.5, 0.80, 3) * 255, 255]
             spike_colors = [colors[unit] for unit in self.sorting_dict["unit_ids"]]
         else:
             spike_colors = (125, 125, 125)
