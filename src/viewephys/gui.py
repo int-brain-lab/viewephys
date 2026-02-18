@@ -132,8 +132,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             self.sr = spikeglx.Reader(
                 file, dtype="int16", nc=384, fs=30000, ns=file.stat().st_size / 384 / 2
             )
-            
-        
+
+
         # enable and set slider, based on the number of samples in the entire file
         self.horizontalSlider.setMaximum(int(np.floor(self.sr.ns / NSAMP_CHUNK)))
         tmax = np.floor(self.sr.ns / NSAMP_CHUNK) * NSAMP_CHUNK / self.sr.fs
@@ -227,12 +227,12 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 t_scalar=T_SCALAR,
                 a_scalar=A_SCALAR,
             )
-            
+
             # TODO: this is rough
             if self.sorting_dict is not None:
                 if self.shank
-                
-                
+
+
                 breakpoint()
 
 
