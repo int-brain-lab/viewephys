@@ -176,6 +176,14 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
         )
         ax = self.plotItem_header_v.getAxis("left")
         ax.setStyle(showValues=False)
+        # Use one authoritative time axis on the main plot.
+        bottom_axis = self.plotItem_seismic.getAxis("bottom")
+        bottom_axis.setLabel("Time", units="s")
+        bottom_axis.enableAutoSIPrefix(True)
+
+        # Keep the top strip x-linked, but hide its duplicate x-axis.
+        self.plotItem_header_h.getPlotItem().hideAxis("bottom")
+
         self.hoverPlotWidgets = {"Trace": None, "Spectrum": None, "Spectrogram": None}
         scene = self.viewBox_seismic.scene()
         self.proxy = pg.SignalProxy(
