@@ -194,8 +194,8 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
         self.lineEdit_sort.returnPressed.connect(self.editSort)
         self.comboBox_header.activated[str].connect(self.ctrl.set_header)
         self.viewBox_seismic.sigRangeChanged.connect(self.on_sigRangeChanged)
-        self.horizontalScrollBar.sliderMoved.connect(self.on_horizontalSliderChange)
-        self.verticalScrollBar.sliderMoved.connect(self.on_verticalSliderChange)
+        self.horizontalScrollBar.valueChanged.connect(self.on_horizontalSliderChange)
+        self.verticalScrollBar.valueChanged.connect(self.on_verticalSliderChange)
         self.radio_density.toggled.connect(
             lambda checked: checked and self.set_display_mode(DISPLAY_MODE_DENSITY)
         )
@@ -315,10 +315,32 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
         def set_scroll(scrollbar, current_range, bounds):
             current_span = current_range[1] - current_range[0]
             doclength = bounds[1] - bounds[0]
+            if doclength <= 0:
+                blocker = QtCore.QSignalBlocker(scrollbar)
+                try:
+                    scrollbar.setMaximum(0)
+                    scrollbar.setPageStep(1)
+                    scrollbar.setSingleStep(1)
+                    scrollbar.setValue(0)
+                finally:
+                    del blocker
+                return
+
             maximum = int((doclength - current_span) / doclength * 65536)
-            scrollbar.setMaximum(maximum)
-            scrollbar.setPageStep(65536 - maximum)
-            scrollbar.setValue(int((current_range[0] - bounds[0]) / doclength * 65536))
+            page_step = max(1, 65536 - maximum)
+            single_step = max(1, page_step // 10)
+            value = int((current_range[0] - bounds[0]) / doclength * 65536)
+            value = max(0, min(maximum, value))
+
+            # Keep plot -> scrollbar synchronization from re-triggering scrollbar -> plot updates.
+            blocker = QtCore.QSignalBlocker(scrollbar)
+            try:
+                scrollbar.setMaximum(maximum)
+                scrollbar.setPageStep(page_step)
+                scrollbar.setSingleStep(single_step)
+                scrollbar.setValue(value)
+            finally:
+                del blocker
 
         xr, yr = self.viewBox_seismic.viewRange()
         xl, yl = self.ctrl.limits()
