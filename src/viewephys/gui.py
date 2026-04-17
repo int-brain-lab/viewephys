@@ -9,17 +9,18 @@ if TYPE_CHECKING:
 
 from pathlib import Path
 
-import easyqc.qt
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 import scipy.signal
 import spikeglx
-from easyqc.gui import EasyQC
 from ibldsp import voltage
 from iblutil.numerical import ismember
 from neuropixel import trace_header
 from qtpy import QtCore, QtGui, QtWidgets, uic
+
+from viewephys.viewer.gui import EasyQC
+from viewephys.viewer.qt import create_app
 
 T_SCALAR = 1  # defaults s for user side
 A_SCALAR = 1e6  # defaults V for user side
@@ -513,7 +514,7 @@ def viewephys(
     :return:
     """
 
-    easyqc.qt.create_app()
+    create_app()
     ev = EphysViewer._get_or_create(title=title)
 
     if channels is None:

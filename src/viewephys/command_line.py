@@ -8,10 +8,6 @@ import argparse
 import os
 import sys
 
-import easyqc.qt
-
-from viewephys.gui import EphysBinViewer
-
 os.environ["QT_MAC_WANTS_LAYER"] = "1"
 
 
@@ -33,7 +29,10 @@ def viewephys():
     )
     args = parser.parse_args()  # returns data from the options specified (echo)
     print(args.file)
-    app = easyqc.qt.create_app()
+    from viewephys.gui import EphysBinViewer
+    from viewephys.viewer.qt import create_app
+
+    app = create_app()
     self = EphysBinViewer(args.file)  # noqa
     sys.exit(app.exec())
 
