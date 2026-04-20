@@ -332,7 +332,8 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
             value = int((current_range[0] - bounds[0]) / doclength * 65536)
             value = max(0, min(maximum, value))
 
-            # Keep plot -> scrollbar synchronization from re-triggering scrollbar -> plot updates.
+            # Keep plot -> scrollbar synchronization from re-triggering
+            # scrollbar -> plot updates.
             blocker = QtCore.QSignalBlocker(scrollbar)
             try:
                 scrollbar.setMaximum(maximum)
@@ -632,9 +633,10 @@ class ControllerWiggle(Controller):
         if self.model.taxis == 0:
             xlim, ylim = (tlim, clim)
             wiggle_y = np.r_[self.model.data, np.ones(self.model.ntr)[np.newaxis, :]]
-            wiggle_y = wiggle_y / (10 ** (self.gain / 20)) + np.arange(
-                self.model.ntr
-            )[np.newaxis, :]
+            wiggle_y = (
+                wiggle_y / (10 ** (self.gain / 20))
+                + np.arange(self.model.ntr)[np.newaxis, :]
+            )
             self.view.plotDataItem_wiggle.setData(
                 x=np.tile(np.r_[self.tscale, np.nan], self.model.ntr),
                 y=wiggle_y.T.flatten(),
