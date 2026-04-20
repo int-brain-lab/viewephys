@@ -105,7 +105,7 @@ class Model:
 class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
     """Reusable seismic-style viewer used by viewephys."""
 
-    model: Model = None
+    model: Model
     layers = None
     QT_APP = None
 

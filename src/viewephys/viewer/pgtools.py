@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -5,6 +6,8 @@ import pyqtgraph as pg
 import scipy.signal
 from pyqtgraph.graphicsItems.GradientEditorItem import Gradients
 from qtpy import QtCore, QtGui, QtWidgets, uic
+
+ScaleLike = Sequence[float] | np.ndarray
 
 
 class ImShowSpectrogram(QtWidgets.QMainWindow):
@@ -130,8 +133,8 @@ class ImShowItem:
     def set_image(
         self,
         image: np.ndarray | None = None,
-        hscale: np.ndarray | None = None,
-        vscale: np.ndarray | None = None,
+        hscale: ScaleLike | None = None,
+        vscale: ScaleLike | None = None,
         colormap: str = "magma",
     ):
         if image is None:
@@ -170,8 +173,8 @@ class ImShowItem:
 
 def imshow(
     image: np.ndarray,
-    hscale: np.ndarray | None = None,
-    vscale: np.ndarray | None = None,
+    hscale: ScaleLike | None = None,
+    vscale: ScaleLike | None = None,
     colormap: str = "viridis",
     imshowitem: ImShowItem | None = None,
 ) -> ImShowItem:
