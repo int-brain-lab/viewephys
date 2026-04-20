@@ -319,9 +319,7 @@ class EphysViewer(EasyQC):
         self.header_curves = {}
         # menus handling
         # menu pick
-        menubar = self.menuBar()
-        assert menubar is not None
-        self.menupick = menubar.addMenu("&Pick")
+        self.menupick = self.menubar.addMenu("&Pick")
         assert self.menupick is not None
         self.action_pick = QtWidgets.QAction("Pick", self)
         self.action_pick.setCheckable(True)
