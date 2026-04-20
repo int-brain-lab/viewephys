@@ -27,6 +27,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest",
+  "pytest-qt",
   "pytest-cov",
   "coverage",
   "mypy",

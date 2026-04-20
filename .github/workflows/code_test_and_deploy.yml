@@ -34,9 +34,12 @@ jobs:
       - name: Install viewephys from repo
         run: |
           python -m pip install --upgrade pip
-          pip install .[qt]
+          pip install .[qt,dev]
 
       - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          MPLCONFIGDIR: /tmp/matplotlib
         run: |
           pytest
 
