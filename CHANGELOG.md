@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.2] - 2026-04-21
+
+### changed
+- Removed the easyqc dependency; tests previously sourced from easyqc are now imported directly
+
+### added
+- Automatic time axis label in viewer
+
+### fixed
+- Scrollbar behaviour
+- Visibility of viewer menus
+
 ## [1.1.1] 2026-02-16
 
 ### added
