@@ -150,7 +150,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.label_sval.setText(f"{tcur:0.2f}s")
 
     def on_jumpToTimeRequested(self) -> None:
-        """Jump to the user-typed time (seconds), snapping to the nearest valid window."""
+        """Jump to the user-typed time (seconds), snapping to
+        the nearest valid window."""
         text = self.lineEdit_jumpTime.text().strip()
         if text == "" or not hasattr(self, "sr"):
             return
@@ -162,12 +163,13 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         value = int(round(t * self.sr.fs / NSAMP_CHUNK))
         value = max(0, min(value, slider_max))
         self.horizontalSlider.setValue(value)
-        # setValue does not emit valueChanged when the value is unchanged, so refresh the
+        # setValue does not emit valueChanged when the value is unchanged,
+        # so refresh the
         # label explicitly to handle the value-already-equal-to-target case.
         self.on_horizontalSliderValueChanged()
         self.on_horizontalSliderReleased()
 
-    def on_horizontalSliderReleased(self) -> None:
+    def on_horizontalSliderReleased(self) -> None:  # noqa: C901
         """
         Open EphysViewer windows at the selected timepoint
         for the selected preprocessing steps.
@@ -231,7 +233,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                     sos = scipy.signal.butter(**butter_kwargs, output="sos")
                     data = scipy.signal.sosfiltfilt(sos, raw)
 
-            self.viewers[k] = viewephys(
+            viewer = viewephys(
                 data,
                 self.sr.fs,
                 channels=self.sr.geometry,
@@ -240,17 +242,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 t_scalar=T_SCALAR,
                 a_scalar=A_SCALAR,
             )
+            self.viewers[k] = viewer
             prev = prev_ranges.get(k)
             if prev is not None:
                 xr_prev, yr_prev = prev
                 width = xr_prev[1] - xr_prev[0]
                 new_x0 = t0 * T_SCALAR
-                self.viewers[k].viewBox_seismic.setXRange(
-                    new_x0, new_x0 + width, padding=0
-                )
-                self.viewers[k].viewBox_seismic.setYRange(
-                    yr_prev[0], yr_prev[1], padding=0
-                )
+                viewer.viewBox_seismic.setXRange(new_x0, new_x0 + width, padding=0)
+                viewer.viewBox_seismic.setYRange(yr_prev[0], yr_prev[1], padding=0)
 
     def closeEvent(self, event: QtGui.QCloseEvent | None) -> None:
         """
