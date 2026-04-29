@@ -69,6 +69,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.horizontalSlider.setTickInterval(10)
         self.horizontalSlider.sliderReleased.connect(self.on_horizontalSliderReleased)
         self.horizontalSlider.valueChanged.connect(self.on_horizontalSliderValueChanged)
+        validator = QtGui.QDoubleValidator(0.0, 1e12, 3, self.lineEdit_jumpTime)
+        validator.setNotation(QtGui.QDoubleValidator.StandardNotation)
+        self.lineEdit_jumpTime.setValidator(validator)
+        self.lineEdit_jumpTime.returnPressed.connect(self.on_jumpToTimeRequested)
+        self.pushButton_jumpTime.clicked.connect(self.on_jumpToTimeRequested)
         self.label_smin.setText("0")
         self.show()
 
@@ -136,11 +141,31 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.label.setText(tlabel)
         self.horizontalSlider.setValue(0)
         self.horizontalSlider.setEnabled(True)
+        self.lineEdit_jumpTime.setEnabled(True)
+        self.pushButton_jumpTime.setEnabled(True)
         self.on_horizontalSliderReleased()
 
     def on_horizontalSliderValueChanged(self) -> None:
         tcur = self.horizontalSlider.value() * NSAMP_CHUNK / self.sr.fs
         self.label_sval.setText(f"{tcur:0.2f}s")
+
+    def on_jumpToTimeRequested(self) -> None:
+        """Jump to the user-typed time (seconds), snapping to the nearest valid window."""
+        text = self.lineEdit_jumpTime.text().strip()
+        if text == "" or not hasattr(self, "sr"):
+            return
+        try:
+            t = float(text)
+        except ValueError:
+            return
+        slider_max = self.horizontalSlider.maximum()
+        value = int(round(t * self.sr.fs / NSAMP_CHUNK))
+        value = max(0, min(value, slider_max))
+        self.horizontalSlider.setValue(value)
+        # setValue does not emit valueChanged when the value is unchanged, so refresh the
+        # label explicitly to handle the value-already-equal-to-target case.
+        self.on_horizontalSliderValueChanged()
+        self.on_horizontalSliderReleased()
 
     def on_horizontalSliderReleased(self) -> None:
         """

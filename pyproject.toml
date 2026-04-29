@@ -24,6 +24,7 @@ dependencies = [
     "scipy",
 ]
 
+
 [project.optional-dependencies]
 dev = [
   "pytest",
