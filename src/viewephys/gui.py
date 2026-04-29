@@ -180,6 +180,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         viewers (one for each selected preprocessing step) to display the
         preprocessed data at the selected timepoint.
         """
+        # Capture current zoom per visible viewer so we can restore it after the reload.
+        prev_ranges: dict[str, tuple[list[float], list[float]] | None] = {}
+        for k, ev in self.viewers.items():
+            if ev is not None and ev.isVisible():
+                xr, yr = ev.viewBox_seismic.viewRange()
+                prev_ranges[k] = (list(xr), list(yr))
+            else:
+                prev_ranges[k] = None
+
         first = int(float(self.horizontalSlider.value()) * NSAMP_CHUNK)
         last = first + int(NSAMP_CHUNK)
         raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
@@ -231,6 +240,17 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 t_scalar=T_SCALAR,
                 a_scalar=A_SCALAR,
             )
+            prev = prev_ranges.get(k)
+            if prev is not None:
+                xr_prev, yr_prev = prev
+                width = xr_prev[1] - xr_prev[0]
+                new_x0 = t0 * T_SCALAR
+                self.viewers[k].viewBox_seismic.setXRange(
+                    new_x0, new_x0 + width, padding=0
+                )
+                self.viewers[k].viewBox_seismic.setYRange(
+                    yr_prev[0], yr_prev[1], padding=0
+                )
 
     def closeEvent(self, event: QtGui.QCloseEvent | None) -> None:
         """
