@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0] - 2026-04-30
+
+### added
+- "Jump to" time entry in the EphysBinViewer for navigating to a specific timepoint
+- Jump-to navigation loads the window starting at the closest sample, rather than snapping to the horizontal slider's 10000-sample discretisation
+- Preserve the current zoom range across slider/jump-to reloads in the EphysBinViewer
+
 ## [1.1.2] - 2026-04-21
 
 ### changed
