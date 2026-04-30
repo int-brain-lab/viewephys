@@ -94,34 +94,75 @@ def jump_window(qtbot, monkeypatch):
 
 @pytest.mark.parametrize(
     "typed_seconds",
-    [0.0, 0.4, 0.5, 100.0, 500.0, 1173.67, 2199.99],
+    [0.0, 0.4, 0.5, 100.0, 500.0, 500.150, 1173.67, 2199.99],
 )
-def test_jump_to_time_snaps_to_nearest_sample(jump_window, qtbot, typed_seconds):
+def test_jump_to_time_loads_exact_sample(jump_window, qtbot, typed_seconds):
+    """Jump-to should load the window starting at the closest sample, while
+    parking the slider at the nearest chunk for visual feedback only."""
     window = jump_window
-    expected_value = int(round(typed_seconds * window.sr.fs / NSAMP_CHUNK))
-    expected_value = max(0, min(expected_value, window.horizontalSlider.maximum()))
-    expected_t = expected_value * NSAMP_CHUNK / window.sr.fs
+    fs = window.sr.fs
+    max_first = max(0, int(window.sr.ns) - NSAMP_CHUNK)
+    expected_first = int(round(typed_seconds * fs))
+    expected_first = max(0, min(expected_first, max_first))
+    expected_slider = max(
+        0,
+        min(
+            int(round(expected_first / NSAMP_CHUNK)), window.horizontalSlider.maximum()
+        ),
+    )
+    expected_t = expected_first / fs
 
     window.lineEdit_jumpTime.setText(str(typed_seconds))
     qtbot.keyPress(window.lineEdit_jumpTime, QtCore.Qt.Key_Return)
 
-    assert window.horizontalSlider.value() == expected_value
-    actual_t = window.horizontalSlider.value() * NSAMP_CHUNK / window.sr.fs
-    assert abs(actual_t - typed_seconds) <= (NSAMP_CHUNK / window.sr.fs) / 2 + 1e-9
-    assert window.label_sval.text() == f"{expected_t:0.2f}s"
+    assert window._first_sample == expected_first
+    assert window.horizontalSlider.value() == expected_slider
+    assert window.label_sval.text() == f"{expected_t:0.6f}s"
+
+
+def test_jump_to_time_non_chunk_aligned(jump_window, qtbot):
+    """Sanity check that 500.150 s lands on its exact sample, not the
+    nearest 10000-sample chunk (which would be 500.000 or 500.333)."""
+    window = jump_window
+    window.lineEdit_jumpTime.setText("500.150")
+    qtbot.keyPress(window.lineEdit_jumpTime, QtCore.Qt.Key_Return)
+
+    assert window._first_sample == int(round(500.150 * window.sr.fs))
+    assert window._first_sample == 15_004_500
+    assert window.horizontalSlider.value() == 1500
+    assert window.label_sval.text() == "500.150000s"
+
+
+def test_slider_drag_resets_first_sample_to_chunk(jump_window, qtbot):
+    """After a non-chunk-aligned jump, dragging the slider must snap
+    `_first_sample` back to the chunk boundary so subsequent loads use the
+    slider position."""
+    window = jump_window
+    window.lineEdit_jumpTime.setText("500.150")
+    qtbot.keyPress(window.lineEdit_jumpTime, QtCore.Qt.Key_Return)
+    assert window._first_sample == 15_004_500  # not chunk-aligned
+
+    window.horizontalSlider.setValue(1501)
+    assert window._first_sample == 1501 * NSAMP_CHUNK
+    assert window.label_sval.text() == f"{1501 * NSAMP_CHUNK / window.sr.fs:0.6f}s"
 
 
 def test_jump_to_time_clamps_out_of_range(jump_window, qtbot):
     window = jump_window
-    slider_max = window.horizontalSlider.maximum()
+    max_first = max(0, int(window.sr.ns) - NSAMP_CHUNK)
+    expected_slider_high = max(
+        0, min(int(round(max_first / NSAMP_CHUNK)), window.horizontalSlider.maximum())
+    )
 
     window.lineEdit_jumpTime.setText("-50")
     qtbot.keyPress(window.lineEdit_jumpTime, QtCore.Qt.Key_Return)
+    assert window._first_sample == 0
     assert window.horizontalSlider.value() == 0
 
     window.lineEdit_jumpTime.setText("99999")
     qtbot.keyPress(window.lineEdit_jumpTime, QtCore.Qt.Key_Return)
-    assert window.horizontalSlider.value() == slider_max
+    assert window._first_sample == max_first
+    assert window.horizontalSlider.value() == expected_slider_high
 
 
 def test_jump_to_time_ignores_garbage(jump_window, qtbot):

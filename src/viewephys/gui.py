@@ -67,9 +67,10 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.horizontalSlider.setMinimum(0)
         self.horizontalSlider.setSingleStep(1)
         self.horizontalSlider.setTickInterval(10)
+        self._first_sample = 0
         self.horizontalSlider.sliderReleased.connect(self.on_horizontalSliderReleased)
         self.horizontalSlider.valueChanged.connect(self.on_horizontalSliderValueChanged)
-        validator = QtGui.QDoubleValidator(0.0, 1e12, 3, self.lineEdit_jumpTime)
+        validator = QtGui.QDoubleValidator(0.0, 1e12, 6, self.lineEdit_jumpTime)
         validator.setNotation(QtGui.QDoubleValidator.StandardNotation)
         self.lineEdit_jumpTime.setValidator(validator)
         self.lineEdit_jumpTime.returnPressed.connect(self.on_jumpToTimeRequested)
@@ -140,18 +141,24 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         )
         self.label.setText(tlabel)
         self.horizontalSlider.setValue(0)
+        self._first_sample = 0
         self.horizontalSlider.setEnabled(True)
         self.lineEdit_jumpTime.setEnabled(True)
         self.pushButton_jumpTime.setEnabled(True)
         self.on_horizontalSliderReleased()
 
     def on_horizontalSliderValueChanged(self) -> None:
-        tcur = self.horizontalSlider.value() * NSAMP_CHUNK / self.sr.fs
-        self.label_sval.setText(f"{tcur:0.2f}s")
+        self._first_sample = int(self.horizontalSlider.value()) * NSAMP_CHUNK
+        self._update_time_label()
+
+    def _update_time_label(self) -> None:
+        tcur = self._first_sample / self.sr.fs
+        self.label_sval.setText(f"{tcur:0.6f}s")
 
     def on_jumpToTimeRequested(self) -> None:
-        """Jump to the user-typed time (seconds), snapping to
-        the nearest valid window."""
+        """Jump to the user-typed time (seconds), loading the window
+        starting at the closest sample. The slider thumb is moved to the
+        nearest chunk for visual feedback only."""
         text = self.lineEdit_jumpTime.text().strip()
         if text == "" or not hasattr(self, "sr"):
             return
@@ -159,14 +166,18 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             t = float(text)
         except ValueError:
             return
-        slider_max = self.horizontalSlider.maximum()
-        value = int(round(t * self.sr.fs / NSAMP_CHUNK))
-        value = max(0, min(value, slider_max))
-        self.horizontalSlider.setValue(value)
-        # setValue does not emit valueChanged when the value is unchanged,
-        # so refresh the
-        # label explicitly to handle the value-already-equal-to-target case.
-        self.on_horizontalSliderValueChanged()
+        max_first = max(0, int(self.sr.ns) - NSAMP_CHUNK)
+        first_sample = int(round(t * self.sr.fs))
+        first_sample = max(0, min(first_sample, max_first))
+        self._first_sample = first_sample
+        slider_value = int(round(first_sample / NSAMP_CHUNK))
+        slider_value = max(0, min(slider_value, self.horizontalSlider.maximum()))
+        # Move slider for visual feedback without letting valueChanged
+        # overwrite the exact first_sample we just set.
+        self.horizontalSlider.blockSignals(True)
+        self.horizontalSlider.setValue(slider_value)
+        self.horizontalSlider.blockSignals(False)
+        self._update_time_label()
         self.on_horizontalSliderReleased()
 
     def on_horizontalSliderReleased(self) -> None:  # noqa: C901
@@ -191,7 +202,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             else:
                 prev_ranges[k] = None
 
-        first = int(float(self.horizontalSlider.value()) * NSAMP_CHUNK)
+        first = int(self._first_sample)
         last = first + int(NSAMP_CHUNK)
         raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
 
