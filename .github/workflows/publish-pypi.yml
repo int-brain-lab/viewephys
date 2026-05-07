@@ -1,0 +1,40 @@
+# .github/workflows/publish-pypi.yml
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    name: Publish viewephys to PyPI
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write   # required for PyPI trusted publishing
+
+    environment: pypi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up PDM
+        uses: pdm-project/setup-pdm@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pdm install -G :all
+
+      - name: Run ruff
+        run: pdm run ruff check .
+
+      - name: Clean old build artifacts
+        run: |
+          rm -rf dist
+          rm -rf .pdm-build
+
+      - name: Publish to PyPI
+        run: pdm publish
