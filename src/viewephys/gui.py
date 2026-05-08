@@ -72,6 +72,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.horizontalSlider.valueChanged.connect(self.on_horizontalSliderValueChanged)
         validator = QtGui.QDoubleValidator(0.0, 1e12, 6, self.lineEdit_jumpTime)
         validator.setNotation(QtGui.QDoubleValidator.StandardNotation)
+        # To handle dot as decimal separator regardless of user locale
+        validator.setLocale(QtCore.QLocale.c())
         self.lineEdit_jumpTime.setValidator(validator)
         self.lineEdit_jumpTime.returnPressed.connect(self.on_jumpToTimeRequested)
         self.pushButton_jumpTime.clicked.connect(self.on_jumpToTimeRequested)
