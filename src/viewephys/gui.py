@@ -158,9 +158,10 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.label_sval.setText(f"{tcur:0.6f}s")
 
     def on_jumpToTimeRequested(self) -> None:
-        """Jump to the user-typed time (seconds), loading the window
-        starting at the closest sample. The slider thumb is moved to the
-        nearest chunk for visual feedback only."""
+        """Jump to the user-typed time, centering the loaded window on it.
+
+        The slider thumb is moved to the nearest chunk for visual feedback only.
+        """
         text = self.lineEdit_jumpTime.text().strip()
         if text == "" or not hasattr(self, "sr"):
             return
@@ -168,9 +169,12 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             t = float(text)
         except ValueError:
             return
+        requested_sample = int(round(t * self.sr.fs))
+        requested_sample = max(0, min(requested_sample, int(self.sr.ns) - 1))
         max_first = max(0, int(self.sr.ns) - NSAMP_CHUNK)
-        first_sample = int(round(t * self.sr.fs))
+        first_sample = requested_sample - NSAMP_CHUNK // 2
         first_sample = max(0, min(first_sample, max_first))
+        center_time = requested_sample / self.sr.fs
         self._first_sample = first_sample
         slider_value = int(round(first_sample / NSAMP_CHUNK))
         slider_value = max(0, min(slider_value, self.horizontalSlider.maximum()))
@@ -180,16 +184,18 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.horizontalSlider.setValue(slider_value)
         self.horizontalSlider.blockSignals(False)
         self._update_time_label()
-        self.on_horizontalSliderReleased()
+        self.on_horizontalSliderReleased(center_time=center_time)
 
-    def on_horizontalSliderReleased(self) -> None:  # noqa: C901
+    def on_horizontalSliderReleased(  # noqa: C901
+        self, center_time: float | None = None
+    ) -> None:
         """
         Open EphysViewer windows at the selected timepoint
         for the selected preprocessing steps.
 
-        The horizontal slider allows the user to select the timepoint
-        at which they would like to see the data. This will open EphysVeiewer
-        windows at a window starting at that time point.
+        The horizontal slider opens EphysViewer windows starting at the
+        selected timepoint. Jump requests may pass ``center_time`` so existing
+        viewer zoom is preserved around the requested absolute time.
 
         Depending on the selected preprocessing steps, open a number of
         viewers (one for each selected preprocessing step) to display the
@@ -209,7 +215,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
 
         # get parameters for both AP and LFP band
-        t0 = first / self.sr.fs * 0
+        t0 = first / self.sr.fs
         if self.sr.type == "lf":
             butter_kwargs = {"N": 3, "Wn": 3 / self.sr.fs * 2, "btype": "highpass"}
             fcn_destripe = voltage.destripe_lfp
@@ -260,8 +266,19 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if prev is not None:
                 xr_prev, yr_prev = prev
                 width = xr_prev[1] - xr_prev[0]
-                new_x0 = t0 * T_SCALAR
-                viewer.viewBox_seismic.setXRange(new_x0, new_x0 + width, padding=0)
+                xmin, xmax = viewer.ctrl.limits()[0]
+                if center_time is None:
+                    new_x0 = t0 * T_SCALAR
+                else:
+                    new_x0 = center_time * T_SCALAR - width / 2
+
+                # Preserve the previous zoom width without panning past the data.
+                if width >= xmax - xmin:
+                    new_x0, new_x1 = xmin, xmax
+                else:
+                    new_x0 = max(xmin, min(new_x0, xmax - width))
+                    new_x1 = new_x0 + width
+                viewer.viewBox_seismic.setXRange(new_x0, new_x1, padding=0)
                 viewer.viewBox_seismic.setYRange(yr_prev[0], yr_prev[1], padding=0)
 
     def closeEvent(self, event: QtGui.QCloseEvent | None) -> None:
