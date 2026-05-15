@@ -26,7 +26,8 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pdm install -G :all
+        # Install the linting extra without forcing every optional Qt binding.
+        run: pdm install -G dev
 
       - name: Run ruff
         run: pdm run ruff check .
