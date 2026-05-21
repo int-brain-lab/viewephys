@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### fixed
+- Pick-spikes auto-detect window now scales with the current zoom level instead of using a fixed half-second range, preventing false `out_of_time_range` rejections at high sample rates (thanks @JoeZiminski)
+- `QSettings.value()` cast to `int` for `nfft`/`nperseg` in `ImShowSpectrogram` to avoid `TypeError` on `//` operator
+
 ## [1.2.0] - 2026-04-30
 
 ### added
