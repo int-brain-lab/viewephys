@@ -504,7 +504,9 @@ class EphysViewer(EasyQC):
         # view, as a rough general-purpose default.
         current_view_s, current_view_tr = self.viewBox_seismic.viewRange()
         current_view_i = np.array(current_view_s) / self.ctrl.model.si
-        TR_RANGE = np.floor((current_view_tr[1] - current_view_tr[0]) * 0.05).astype(int)
+        TR_RANGE = np.floor(
+            (current_view_tr[1] - current_view_tr[0]) * 0.05
+        ).astype(int)
         S_RANGE = np.floor((current_view_i[1] - current_view_i[0]) * 0.02).astype(int)
         qxy = self.imageItem_seismic.mapFromScene(event.scenePos())
         s, tr = (qxy.x(), qxy.y())

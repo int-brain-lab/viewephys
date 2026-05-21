@@ -27,11 +27,11 @@ class ImShowSpectrogram(QtWidgets.QMainWindow):
 
     @property
     def nfft(self):
-        return self.settings.value("nfft", 512)
+        return int(self.settings.value("nfft", 512))
 
     @property
     def nperseg(self):
-        return self.settings.value("nperseg", 256)
+        return int(self.settings.value("nperseg", 256))
 
     @property
     def noverlap(self):
