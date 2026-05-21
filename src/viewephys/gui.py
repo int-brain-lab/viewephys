@@ -502,12 +502,10 @@ class EphysViewer(EasyQC):
         # Create the limits for a small window around the clicked point.
         # We take 5% of the height and 2% of the width of the current
         # view, as a rough general-purpose default.
-        current_view_s, current_view_tr = self.viewBox_seismic.state["viewRange"]
+        current_view_s, current_view_tr = self.viewBox_seismic.viewRange()
         current_view_i = np.array(current_view_s) / self.ctrl.model.si
         TR_RANGE = np.floor((current_view_tr[1] - current_view_tr[0]) * 0.05).astype(int)
         S_RANGE = np.floor((current_view_i[1] - current_view_i[0]) * 0.02).astype(int)
-
-        self.plotItem_seismic.windowState
         qxy = self.imageItem_seismic.mapFromScene(event.scenePos())
         s, tr = (qxy.x(), qxy.y())
         # if event.buttons() == QtCore.Qt.MiddleButton:
