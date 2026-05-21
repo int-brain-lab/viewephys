@@ -2,9 +2,14 @@
 
 ## [Unreleased]
 
+### added
+- `examples/` folder with `from_binary.py` and `from_array.py` demonstrating script usage ([#29](https://github.com/int-brain-lab/viewephys/pull/29), thanks @JoeZiminski)
+- README expanded with script-usage instructions showing the `create_app()` / `app.exec()` pattern
+- `spikeinterface` added as a dependency
+
 ### fixed
-- Pick-spikes auto-detect window now scales with the current zoom level instead of using a fixed half-second range, preventing false `out_of_time_range` rejections at high sample rates (thanks @JoeZiminski)
-- `QSettings.value()` cast to `int` for `nfft`/`nperseg` in `ImShowSpectrogram` to avoid `TypeError` on `//` operator
+- Pick-spikes auto-detect window now scales with the current zoom level instead of using a fixed half-second range, preventing false `out_of_time_range` rejections at high sample rates ([#28](https://github.com/int-brain-lab/viewephys/pull/28), thanks @JoeZiminski)
+- `QSettings.value()` cast to `int` for `nfft`/`nperseg` in `ImShowSpectrogram` to avoid `TypeError` on `//` operator ([#28](https://github.com/int-brain-lab/viewephys/pull/28))
 
 ## [1.2.0] - 2026-04-30
 
