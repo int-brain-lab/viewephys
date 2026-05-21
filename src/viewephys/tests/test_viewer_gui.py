@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
-from qtpy import QtCore
+from qtpy import QtCore, QtWidgets
 
-from viewephys.gui import NSAMP_CHUNK, EphysBinViewer
+from viewephys.gui import NSAMP_CHUNK, EphysBinViewer, create_app, viewephys
 from viewephys.tests.test_viewer_helpers import synthetic_seismic_data
 from viewephys.viewer.gui import EasyQC, viewseis
 
@@ -281,3 +281,24 @@ def test_jump_to_time_recenters_existing_zoom(qtbot, monkeypatch):
 
     window.close()
     window.deleteLater()
+
+
+def test_script_api_create_app(qtbot):
+    """create_app() must be importable from viewephys.gui and return a QApplication.
+
+    Regression guard for the README script-usage examples.
+    """
+    app = create_app()
+    assert isinstance(app, QtWidgets.QApplication)
+
+
+def test_script_api_viewephys(qtbot, synthetic_seis):
+    """viewephys() must be importable from viewephys.gui and open a window.
+
+    Regression guard for the README script-usage examples.
+    """
+    data, header = synthetic_seis
+    window = viewephys(data, fs=30000, title="test_script_api")
+    qtbot.addWidget(window)
+    assert window is not None
+    window.close()
