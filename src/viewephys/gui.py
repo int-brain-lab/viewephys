@@ -182,7 +182,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         The slider thumb is moved to the nearest chunk for visual feedback only.
         """
         text = self.lineEdit_jumpTime.text().strip()
-        if text == "" or not hasattr(self, "sr"):
+        if text == "" or not hasattr(self, "data"):
             return
         try:
             t = float(text)
