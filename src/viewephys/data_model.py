@@ -172,3 +172,38 @@ class SpikeGLXDataModel(AbstractDataModel):
     def get_saturation_adc(self) -> float:
         """ADC saturation level in µV."""
         return self.sr.range_volts[0] * 1e6
+
+
+class SpikeInterfaceDataModel(AbstractDataModel):
+    def __init__(self):
+        pass
+
+    def get_data(self, start_sample, end_sample, step, raw=None):
+        raise NotImplementedError
+
+    def get_raw(self, start_sample, end_sample):
+        raise NotImplementedError
+
+    def get_geometry(self):
+        raise NotImplementedError
+
+    def get_num_samples(self):
+        raise NotImplementedError
+
+    def get_sampling_frequency(self):
+        raise NotImplementedError
+
+    def get_recording_length(self):
+        raise NotImplementedError
+
+    def get_file_path(self):
+        raise NotImplementedError
+
+    def get_neuropixels_version(self):
+        raise NotImplementedError
+
+    def get_num_channels(self):
+        raise NotImplementedError
+
+    def get_saturation_adc(self):
+        raise NotImplementedError
