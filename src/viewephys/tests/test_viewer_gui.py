@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from qtpy import QtCore, QtWidgets
 
+from viewephys.data_model import SpikeGLXDataModel
 from viewephys.gui import NSAMP_CHUNK, EphysBinViewer, create_app, viewephys
 from viewephys.tests.test_viewer_helpers import synthetic_seismic_data
 from viewephys.viewer.gui import EasyQC, viewseis
@@ -146,8 +147,8 @@ def _centered_first_sample(typed_seconds, fs, ns):
 def jump_window(qtbot, monkeypatch):
     window = EphysBinViewer()
     qtbot.addWidget(window)
-    window.sr = _FakeSR()
-    slider_max = int(np.floor(window.sr.ns / NSAMP_CHUNK))
+    window.data = SpikeGLXDataModel(_FakeSR())
+    slider_max = int(np.floor(window.data.get_num_samples() / NSAMP_CHUNK))
     window.horizontalSlider.setMaximum(slider_max)
     window.horizontalSlider.setEnabled(True)
     window.lineEdit_jumpTime.setEnabled(True)
@@ -171,8 +172,10 @@ def test_jump_to_time_loads_exact_sample(jump_window, qtbot, typed_seconds):
     """Jump-to should center the window on the requested sample, while
     parking the slider near the loaded window for visual feedback only."""
     window = jump_window
-    fs = window.sr.fs
-    expected_first = _centered_first_sample(typed_seconds, fs, window.sr.ns)
+    fs = window.data.get_sampling_frequency()
+    expected_first = _centered_first_sample(
+        typed_seconds, fs, window.data.get_num_samples()
+    )
     expected_slider = max(
         0,
         min(
@@ -195,7 +198,7 @@ def test_jump_to_time_non_chunk_aligned(jump_window, qtbot):
     window.lineEdit_jumpTime.setText("500.150")
     window.on_jumpToTimeRequested()
 
-    requested_sample = int(round(500.150 * window.sr.fs))
+    requested_sample = int(round(500.150 * window.data.get_sampling_frequency()))
     assert window._first_sample + NSAMP_CHUNK // 2 == requested_sample
     assert window._first_sample == 14_999_500
     assert window.horizontalSlider.value() == 1500
@@ -213,12 +216,15 @@ def test_slider_drag_resets_first_sample_to_chunk(jump_window, qtbot):
 
     window.horizontalSlider.setValue(1501)
     assert window._first_sample == 1501 * NSAMP_CHUNK
-    assert window.label_sval.text() == f"{1501 * NSAMP_CHUNK / window.sr.fs:0.6f}s"
+    assert (
+        window.label_sval.text()
+        == f"{1501 * NSAMP_CHUNK / window.data.get_sampling_frequency():0.6f}s"
+    )
 
 
 def test_jump_to_time_clamps_out_of_range(jump_window, qtbot):
     window = jump_window
-    max_first = max(0, int(window.sr.ns) - NSAMP_CHUNK)
+    max_first = max(0, int(window.data.get_num_samples()) - NSAMP_CHUNK)
     expected_slider_high = max(
         0, min(int(round(max_first / NSAMP_CHUNK)), window.horizontalSlider.maximum())
     )
@@ -250,8 +256,10 @@ def test_jump_to_time_recenters_existing_zoom(qtbot, monkeypatch):
     """Reloaded viewers should keep zoom width and recenter on the jump time."""
     window = EphysBinViewer()
     qtbot.addWidget(window)
-    window.sr = _FakeArraySR()
-    window.horizontalSlider.setMaximum(int(np.floor(window.sr.ns / NSAMP_CHUNK)))
+    window.data = SpikeGLXDataModel(_FakeArraySR())
+    window.horizontalSlider.setMaximum(
+        int(np.floor(window.data.get_num_samples() / NSAMP_CHUNK))
+    )
     for checkbox in window.cbs.values():
         checkbox.setChecked(False)
     window.cbs["raw"].setChecked(True)
@@ -273,7 +281,9 @@ def test_jump_to_time_recenters_existing_zoom(qtbot, monkeypatch):
 
     x0, x1, padding = captured["viewer"].viewBox_seismic.xrange
     y0, y1, y_padding = captured["viewer"].viewBox_seismic.yrange
-    assert captured["t0"] == pytest.approx(window._first_sample / window.sr.fs)
+    assert captured["t0"] == pytest.approx(
+        window._first_sample / window.data.get_sampling_frequency()
+    )
     assert (x0 + x1) / 2 == pytest.approx(500.150)
     assert x1 - x0 == pytest.approx(0.1)
     assert padding == 0
