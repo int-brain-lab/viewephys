@@ -1,56 +1,43 @@
-
-
 import abc
+
 import scipy.signal
 from ibldsp import voltage
 
 
 class AbstractDataModel(abc.ABC):
+    @abc.abstractmethod
+    def get_data(self, start_sample, end_sample, pp_step): ...
 
     @abc.abstractmethod
-    def get_data(self, start_sample, end_sample, pp_step):
-        ...
+    def get_num_samples(self): ...
 
     @abc.abstractmethod
-    def get_num_samples(self):
-        ...
+    def get_sampling_frequency(self): ...
 
     @abc.abstractmethod
-    def get_sampling_frequency(self):
-        ...
+    def get_recording_length(self): ...
 
     @abc.abstractmethod
-    def get_recording_length(self):
-        ...
+    def get_file_path(self): ...
 
     @abc.abstractmethod
-    def get_file_path(self):
-        ...
+    def get_neuropixels_version(self): ...
 
     @abc.abstractmethod
-    def get_neuropixels_version(self):
-        ...
+    def get_num_channels(self): ...
 
     @abc.abstractmethod
-    def get_num_channels(self):
-        ...
+    def get_saturation_adc(self): ...
 
     @abc.abstractmethod
-    def get_saturation_adc(self):
-        ...
-
-    @abc.abstractmethod
-    def get_geometry(self):
-        ...
+    def get_geometry(self): ...
 
 
 class SpikeGLXDataModel(AbstractDataModel):
-
     def __init__(self, sr):
         self.sr = sr
 
-    def get_data(self, start_sample, end_sample, step, raw = None):
-
+    def get_data(self, start_sample, end_sample, step, raw=None):
         if raw is None:
             raw = self.get_raw(start_sample, end_sample)
 
@@ -58,9 +45,9 @@ class SpikeGLXDataModel(AbstractDataModel):
             case "raw":
                 data = raw
             case "destripe":
-                t0 = start_sample / self.get_sampling_frequency()
-
-                fcn_destripe = voltage.destripe_lfp if self.sr.type == "lf" else  voltage.destripe
+                fcn_destripe = (
+                    voltage.destripe_lfp if self.sr.type == "lf" else voltage.destripe
+                )
 
                 data = fcn_destripe(
                     x=raw,
@@ -72,7 +59,11 @@ class SpikeGLXDataModel(AbstractDataModel):
 
             case "butterworth":
                 cutoff = 3 if self.sr.type == "lf" else 300
-                butter_kwargs = {"N": 3, "Wn": cutoff / self.sr.fs * 2, "btype": "highpass"}
+                butter_kwargs = {
+                    "N": 3,
+                    "Wn": cutoff / self.sr.fs * 2,
+                    "btype": "highpass",
+                }
 
                 sos = scipy.signal.butter(**butter_kwargs, output="sos")
                 data = scipy.signal.sosfiltfilt(sos, raw)
