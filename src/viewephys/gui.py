@@ -21,6 +21,7 @@ from qtpy import QtCore, QtGui, QtWidgets, uic
 
 from viewephys.viewer.gui import EasyQC
 from viewephys.viewer.qt import create_app
+from viewephys.data_model import  SpikeGLXDataModel
 
 T_SCALAR = 1  # defaults s for user side
 A_SCALAR = 1e6  # defaults V for user side
@@ -93,8 +94,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             "destripe": self.cb_destripe_ap,
             "raw": self.cb_raw_ap,
         }
+        self.data = None
         if bin_file is not None:
-            self.open_file(file=bin_file)
+            self.open_file(file=bin_file)  # set self.data
 
     def open_file_live(self, *args, **kwargs) -> None:
         """
@@ -120,26 +122,37 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             )
             if file == "":
                 return
+
         file = Path(file)
         self.settings.setValue("bin_file_path", str(file.parent))
         ReaderClass = spikeglx.Reader if not live else spikeglx.OnlineReader
         try:
-            self.sr = ReaderClass(file)
+            sr = ReaderClass(file)
         except AssertionError:
-            self.sr = spikeglx.Reader(
+            sr = spikeglx.Reader(
                 file, dtype="int16", nc=384, fs=30000, ns=file.stat().st_size / 384 / 2
             )
+
+        self.data = SpikeGLXDataModel(sr)
+
         # enable and set slider, based on the number of samples in the entire file
-        self.horizontalSlider.setMaximum(int(np.floor(self.sr.ns / NSAMP_CHUNK)))
-        tmax = np.floor(self.sr.ns / NSAMP_CHUNK) * NSAMP_CHUNK / self.sr.fs
+        num_samples = self.data.get_num_samples()
+        sampling_frequency = self.data.get_sampling_frequency()
+
+        self.horizontalSlider.setMaximum(int(np.floor(num_samples / NSAMP_CHUNK)))
+        tmax = np.floor(num_samples / NSAMP_CHUNK) * NSAMP_CHUNK / sampling_frequency  # TODO: move to data? figure out NSAMP_CHUNK
         self.label_smax.setText(f"{tmax:0.2f}s")
+
+        neuropixel_version = self.data.get_neuropixels_version()
+        neuropixel_label = f"NEUROPIXEL {neuropixel_version} \n" if neuropixel_version else ""
+
         tlabel = (
-            f"{self.sr.file_bin} \n \n"
-            f"NEUROPIXEL {self.sr.major_version} \n"
-            f"{self.sr.rl} seconds long \n"
-            f"{self.sr.fs} Hz Sampling Frequency \n"
-            f"{self.sr.nc} Channels \n"
-            f"Saturation ADC at {self.sr.range_volts[0] * 1e6} uV \n"
+            f"{self.data.get_file_path()} \n \n"
+            f"{neuropixel_label}"
+            f"{self.data.get_recording_length()} seconds long \n"
+            f"{sampling_frequency} Hz Sampling Frequency \n"
+            f"{self.data.get_num_channels()} Channels \n"
+            f"Saturation ADC at {self.data.get_saturation_adc()} uV \n"
         )
         self.label.setText(tlabel)
         self.horizontalSlider.setValue(0)
@@ -157,7 +170,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if not hasattr(self, "sr"):
             self.lineEdit_jumpTime.setText("0.000000")
             return
-        tcur = self._first_sample / self.sr.fs
+        tcur = self._first_sample / self.data.get_sampling_frequency()
         self.lineEdit_jumpTime.setText(f"{tcur:0.6f}")
 
     def on_jumpToTimeRequested(self) -> None:
@@ -172,12 +185,16 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             t = float(text)
         except ValueError:
             return
-        requested_sample = int(round(t * self.sr.fs))
-        requested_sample = max(0, min(requested_sample, int(self.sr.ns) - 1))
-        max_first = max(0, int(self.sr.ns) - NSAMP_CHUNK)
+
+        sampling_frequency = self.data.get_sampling_frequency()
+        num_samples = self.data.get_num_samples()
+
+        requested_sample = int(round(t * sampling_frequency))  # TODO: here the data model can have some conveience functions for going time-sample
+        requested_sample = max(0, min(requested_sample, int(num_samples) - 1))
+        max_first = max(0, int(num_samples) - NSAMP_CHUNK)
         first_sample = requested_sample - NSAMP_CHUNK // 2
         first_sample = max(0, min(first_sample, max_first))
-        center_time = requested_sample / self.sr.fs
+        center_time = requested_sample / sampling_frequency
         self._first_sample = first_sample
         slider_value = int(round(first_sample / NSAMP_CHUNK))
         slider_value = max(0, min(slider_value, self.horizontalSlider.maximum()))
@@ -215,56 +232,37 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
         first = int(self._first_sample)
         last = first + int(NSAMP_CHUNK)
-        raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
+        t0 = first / self.data.get_sampling_frequency()
+
+#       Here we leave the old data flow but for a more general case we would
+#        need to make a performance regression in the interest of
+#       a simple interface (i.e. each call to data copies rawdata and preprocesses it,
+#       matching what spikeinterface does under the hood.. We can do something nice to undo this
+#       regression but currently not sure of the performance impact (presumably small
+#       for short trace snippets.
+        # raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
+        raw = self.data.get_raw(first, last)
 
         # get parameters for both AP and LFP band
-        t0 = first / self.sr.fs
-        if self.sr.type == "lf":
-            butter_kwargs = {"N": 3, "Wn": 3 / self.sr.fs * 2, "btype": "highpass"}
-            fcn_destripe = voltage.destripe_lfp
-        else:
-            butter_kwargs = {"N": 3, "Wn": 300 / self.sr.fs * 2, "btype": "highpass"}
-            fcn_destripe = voltage.destripe
 
         # For each preprocessing step, create an EphysViewer
         for k in self.viewers:
-            if not self.cbs[k].isChecked():
+            if not self.cbs[k].isChecked():  # TODO: rename to checkboxes
                 continue
-            match k:
-                case "raw":
-                    data = raw
-                case "destripe":
-                    data = fcn_destripe(
-                        x=raw,
-                        fs=self.sr.fs,
-                        channel_labels=False,
-                        h=self.sr.geometry,
-                        neuropixel_version=self.sr.major_version,
-                    )
-                case "butterworth":
-                    sos = scipy.signal.butter(**butter_kwargs, output="sos")
-                    data = scipy.signal.sosfiltfilt(sos, raw)
-                case "broadband":
-                    last = first + int(self.sr.fs * 3)
-                    raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
-                    butter_kwargs = {
-                        "N": 3,
-                        "Wn": 2 / self.sr.fs * 2,
-                        "btype": "highpass",
-                    }
-                    sos = scipy.signal.butter(**butter_kwargs, output="sos")
-                    data = scipy.signal.sosfiltfilt(sos, raw)
+
+            data = self.data.get_data(first, last, k, raw=raw)
 
             viewer = viewephys(
                 data,
-                self.sr.fs,
-                channels=self.sr.geometry,
+                self.data.get_sampling_frequency(),
+                channels=self.data.get_geometry(),
                 title=k,
                 t0=t0 * T_SCALAR,
                 t_scalar=T_SCALAR,
                 a_scalar=A_SCALAR,
             )
             self.viewers[k] = viewer
+
             prev = prev_ranges.get(k)
             if prev is not None:
                 xr_prev, yr_prev = prev
