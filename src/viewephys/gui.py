@@ -12,16 +12,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
-import scipy.signal
 import spikeglx
-from ibldsp import voltage
 from iblutil.numerical import ismember
 from neuropixel import trace_header
 from qtpy import QtCore, QtGui, QtWidgets, uic
 
+from viewephys.data_model import SpikeGLXDataModel
 from viewephys.viewer.gui import EasyQC
 from viewephys.viewer.qt import create_app
-from viewephys.data_model import  SpikeGLXDataModel
 
 T_SCALAR = 1  # defaults s for user side
 A_SCALAR = 1e6  # defaults V for user side
@@ -94,7 +92,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             "destripe": self.cb_destripe_ap,
             "raw": self.cb_raw_ap,
         }
-        self.data = None
+        self.data: SpikeGLXDataModel
+
         if bin_file is not None:
             self.open_file(file=bin_file)  # set self.data
 
@@ -140,11 +139,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         sampling_frequency = self.data.get_sampling_frequency()
 
         self.horizontalSlider.setMaximum(int(np.floor(num_samples / NSAMP_CHUNK)))
-        tmax = np.floor(num_samples / NSAMP_CHUNK) * NSAMP_CHUNK / sampling_frequency  # TODO: move to data? figure out NSAMP_CHUNK
+        tmax = (
+            np.floor(num_samples / NSAMP_CHUNK) * NSAMP_CHUNK / sampling_frequency
+        )  # TODO: move to data? figure out NSAMP_CHUNK
         self.label_smax.setText(f"{tmax:0.2f}s")
 
         neuropixel_version = self.data.get_neuropixels_version()
-        neuropixel_label = f"NEUROPIXEL {neuropixel_version} \n" if neuropixel_version else ""
+        neuropixel_label = (
+            f"NEUROPIXEL {neuropixel_version} \n" if neuropixel_version else ""
+        )
 
         tlabel = (
             f"{self.data.get_file_path()} \n \n"
@@ -186,7 +189,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         sampling_frequency = self.data.get_sampling_frequency()
         num_samples = self.data.get_num_samples()
 
-        requested_sample = int(round(t * sampling_frequency))  # TODO: here the data model can have some conveience functions for going time-sample
+        # TODO: data model could have convenience functions for time↔sample conversion
+        requested_sample = int(round(t * sampling_frequency))
         requested_sample = max(0, min(requested_sample, int(num_samples) - 1))
         max_first = max(0, int(num_samples) - NSAMP_CHUNK)
         first_sample = requested_sample - NSAMP_CHUNK // 2
@@ -231,13 +235,10 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         last = first + int(NSAMP_CHUNK)
         t0 = first / self.data.get_sampling_frequency()
 
-#       Here we leave the old data flow but for a more general case we would
-#        need to make a performance regression in the interest of
-#       a simple interface (i.e. each call to data copies rawdata and preprocesses it,
-#       matching what spikeinterface does under the hood.. We can do something nice to undo this
-#       regression but currently not sure of the performance impact (presumably small
-#       for short trace snippets.
-        # raw = self.sr[first:last, : self.sr.nc - self.sr.nsync].T
+        # Old data flow preserved: fetch raw once, branch per preprocessing step.
+        # A fully general interface would re-fetch inside each get_data() call
+        # (matching SI semantics) but the performance impact is small for short
+        # snippets and the shared raw buffer avoids redundant disk reads.
         raw = self.data.get_raw(first, last)
 
         # get parameters for both AP and LFP band
