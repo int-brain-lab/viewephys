@@ -6,6 +6,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     import matplotlib
+    from spikeinterface.core import BaseRecording
 
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from iblutil.numerical import ismember
 from neuropixel import trace_header
 from qtpy import QtCore, QtGui, QtWidgets, uic
 
-from viewephys.data_model import SpikeGLXDataModel
+from viewephys.data_model import SpikeGLXDataModel, SpikeInterfaceDataModel
 from viewephys.viewer.gui import EasyQC
 from viewephys.viewer.qt import create_app
 
@@ -43,7 +44,9 @@ SNS_PALETTE = [
 
 
 class EphysBinViewer(QtWidgets.QMainWindow):
-    def __init__(self, bin_file: str | Path | None = None, *args, **kwargs):
+    def __init__(
+        self, bin_file: str | Path | None = None, *args, **kwargs
+    ):  # TODO: TYPE
         """
         Class for viewing a binary file output from SpikeGLX.
 
@@ -122,17 +125,24 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if file == "":
                 return
 
-        file = Path(file)
-        self.settings.setValue("bin_file_path", str(file.parent))
-        ReaderClass = spikeglx.Reader if not live else spikeglx.OnlineReader
-        try:
-            sr = ReaderClass(file)
-        except AssertionError:
-            sr = spikeglx.Reader(
-                file, dtype="int16", nc=384, fs=30000, ns=file.stat().st_size / 384 / 2
-            )
+        if isinstance(file, str) or isinstance(file, Path):
+            file = Path(file)
+            self.settings.setValue("bin_file_path", str(file.parent))
+            ReaderClass = spikeglx.Reader if not live else spikeglx.OnlineReader
+            try:
+                sr = ReaderClass(file)
+            except AssertionError:
+                sr = spikeglx.Reader(
+                    file,
+                    dtype="int16",
+                    nc=384,
+                    fs=30000,
+                    ns=file.stat().st_size / 384 / 2,
+                )
+            self.data = SpikeGLXDataModel(sr)
 
-        self.data = SpikeGLXDataModel(sr)
+        elif isinstance(file, BaseRecording):
+            self.data = SpikeInterfaceDataModel(sr)
 
         # enable and set slider, based on the number of samples in the entire file
         num_samples = self.data.get_num_samples()
@@ -142,26 +152,37 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         tmax = np.floor(num_samples / NSAMP_CHUNK) * NSAMP_CHUNK / sampling_frequency
         self.label_smax.setText(f"{tmax:0.2f}s")
 
-        neuropixel_version = self.data.get_neuropixels_version()
-        neuropixel_label = (
-            f"NEUROPIXEL {neuropixel_version} \n" if neuropixel_version else ""
-        )
-
-        tlabel = (
-            f"{self.data.get_file_path()} \n \n"
-            f"{neuropixel_label}"
-            f"{self.data.get_recording_length()} seconds long \n"
-            f"{sampling_frequency} Hz Sampling Frequency \n"
-            f"{self.data.get_num_channels()} Channels \n"
-            f"Saturation ADC at {self.data.get_saturation_adc()} uV \n"
-        )
+        tlabel = self._create_top_label()
         self.label.setText(tlabel)
+
         self.horizontalSlider.setValue(0)
         self._first_sample = 0
         self.horizontalSlider.setEnabled(True)
         self.lineEdit_jumpTime.setEnabled(True)
         self._update_time_label()
         self.on_horizontalSliderReleased()
+
+    def _create_top_label(self):
+        """"""
+        file_path = self.data.get_file_path()
+        file_path_label = f"{file_path} \n \n" if file_path else ""
+
+        probe_info = self.data.get_probe_information()
+        probe_label = f"{probe_info} \n" if probe_info else ""
+
+        saturation_acd = self.data.get_saturation_adc()
+        saturation_label = (
+            f"Saturation ADC at {saturation_acd} uV \n" if saturation_acd else ""
+        )
+
+        tlabel = (
+            f"{file_path_label}"
+            f"{probe_label}"
+            f"{self.data.get_recording_length()} seconds long \n"
+            f"{self.data.get_sampling_frequency()} Hz Sampling Frequency \n"
+            f"{self.data.get_num_channels()} Channels \n"
+            f"{saturation_label}"
+        )
 
     def on_horizontalSliderValueChanged(self) -> None:
         self._first_sample = int(self.horizontalSlider.value()) * NSAMP_CHUNK
