@@ -189,7 +189,9 @@ class SpikeInterfaceDataModel(AbstractDataModel):
             if not rec.has_probe():
                 raise ValueError("All passed recordings must have a probe attached.")
 
-        first_probe = self.first_recording.get_probe()
+            # TODO: check for probegroup, not sure we can support at this stage
+
+        first_contact_positions = self.first_recording.get_probe().contact_positions
         first_sampling_frequency = self.first_recording.get_sampling_frequency()
         first_num_samples = self.first_recording.get_num_samples(segment_index=0)
         first_gains = self.first_recording.get_channel_gains()
@@ -210,7 +212,9 @@ class SpikeInterfaceDataModel(AbstractDataModel):
             assert rec.get_num_samples(segment_index=0) == first_num_samples
             assert np.array_equal(rec.get_channel_gains(), first_gains)
             assert np.array_equal(rec.get_channel_offsets(), first_offsets)
-            assert rec.get_probe().to_dict() == first_probe.to_dict()
+            assert np.array_equal(
+                rec.get_probe().contact_positions, first_contact_positions
+            )
 
     def get_data(self, start_sample, end_sample, step, raw=None):
         assert step in self.recordings_dict, (
@@ -239,15 +243,38 @@ class SpikeInterfaceDataModel(AbstractDataModel):
         return None
 
     def get_geometry(self):
-        breakpoint()
         probe = self.first_recording.get_probe()
         positions = probe.contact_positions  # (n_contacts, 2) in µm
         nc = self.first_recording.get_num_channels()
-        return {
+        _, row = np.unique(positions[:, 1], return_inverse=True)
+        # col is computed per-shank so shank-relative x values are ranked correctly
+        col = np.zeros(nc, dtype=float)
+        for shank_id in np.unique(probe.shank_ids):
+            mask = probe.shank_ids == shank_id
+            _, col[mask] = np.unique(positions[mask, 0], return_inverse=True)
+
+        geom = {
+            "trace": np.arange(nc),
+            "shank": probe.shank_ids.astype(int),
             "x": positions[:, 0],
             "y": positions[:, 1],
-            "trace": np.arange(nc),
+            # TODO: we have no flag yet. We can look for it on the SI recording
+            "col": col,
+            "row": row.astype(int),
         }
+
+        if (
+            sample_shift := self.first_recording.get_property("inter_sample_shift")
+        ) is not None:
+            geom["sample_shift"] = np.asarray(sample_shift, dtype=float)
+
+        if (adc := probe.contact_annotations.get("adc_group")) is not None:
+            geom["adc"] = np.asarray(adc, dtype=int)
+
+        if probe.device_channel_indices is not None:
+            geom["ind"] = probe.device_channel_indices.astype(int)
+
+        return geom
 
     def get_num_samples(self):
         return self.first_recording.get_num_samples(segment_index=0)
