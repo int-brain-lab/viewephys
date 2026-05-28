@@ -1,43 +1,59 @@
 import abc
+from pathlib import Path
 
+import numpy as np
 import scipy.signal
 from ibldsp import voltage
+from typing_extensions import override
 
 
 class AbstractDataModel(abc.ABC):
     @abc.abstractmethod
-    def get_data(self, start_sample, end_sample, pp_step): ...
+    def get_data(
+        self,
+        start_sample: int,
+        end_sample: int,
+        pp_step: str,
+        raw: np.ndarray | None = None,
+    ) -> np.ndarray: ...
 
     @abc.abstractmethod
-    def get_num_samples(self): ...
+    def get_num_samples(self) -> int: ...
 
     @abc.abstractmethod
-    def get_sampling_frequency(self): ...
+    def get_sampling_frequency(self) -> float: ...
 
     @abc.abstractmethod
-    def get_recording_length(self): ...
+    def get_recording_length(self) -> float: ...
 
     @abc.abstractmethod
-    def get_file_path(self): ...
+    def get_file_path(self) -> Path: ...
 
     @abc.abstractmethod
-    def get_neuropixels_version(self): ...
+    def get_neuropixels_version(self) -> int: ...
 
     @abc.abstractmethod
-    def get_num_channels(self): ...
+    def get_num_channels(self) -> int: ...
 
     @abc.abstractmethod
-    def get_saturation_adc(self): ...
+    def get_saturation_adc(self) -> float: ...
 
     @abc.abstractmethod
-    def get_geometry(self): ...
+    def get_geometry(self) -> dict: ...
 
 
 class SpikeGLXDataModel(AbstractDataModel):
-    def __init__(self, sr):
+    def __init__(self, sr) -> None:
         self.sr = sr
 
-    def get_data(self, start_sample, end_sample, step, raw=None):
+    @override
+    def get_data(
+        self,
+        start_sample: int,
+        end_sample: int,
+        step: str,
+        raw: np.ndarray | None = None,
+    ) -> np.ndarray:
         if raw is None:
             raw = self.get_raw(start_sample, end_sample)
 
@@ -81,31 +97,39 @@ class SpikeGLXDataModel(AbstractDataModel):
 
         return data
 
-    def get_raw(self, start_sample, end_sample):
+    def get_raw(self, start_sample: int, end_sample: int) -> np.ndarray:
         """A temporary helper function for getting the raw data to match
         the old logic flow, without confusing recursion calling of get_data"""
         return self.sr[start_sample:end_sample, : self.sr.nc - self.sr.nsync].T
 
-    def get_geometry(self):
+    @override
+    def get_geometry(self) -> dict:
         return self.sr.geometry
 
-    def get_num_samples(self):
+    @override
+    def get_num_samples(self) -> int:
         return self.sr.ns
 
-    def get_sampling_frequency(self):
+    @override
+    def get_sampling_frequency(self) -> float:
         return self.sr.fs
 
-    def get_recording_length(self):
+    @override
+    def get_recording_length(self) -> float:
         return self.sr.rl
 
-    def get_file_path(self):
+    @override
+    def get_file_path(self) -> Path:
         return self.sr.file_bin
 
-    def get_neuropixels_version(self):
+    @override
+    def get_neuropixels_version(self) -> int:
         return self.sr.major_version
 
-    def get_num_channels(self):
+    @override
+    def get_num_channels(self) -> int:
         return self.sr.nc
 
-    def get_saturation_adc(self):
+    @override
+    def get_saturation_adc(self) -> float:
         return self.sr.range_volts[0] * 1e6
