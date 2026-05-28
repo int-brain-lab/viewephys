@@ -148,6 +148,7 @@ def jump_window(qtbot, monkeypatch):
     window = EphysBinViewer()
     qtbot.addWidget(window)
     window.data = SpikeGLXDataModel(_FakeSR())
+    window._setup_viewers_and_checkboxes()
     slider_max = int(np.floor(window.data.get_num_samples() / NSAMP_CHUNK))
     window.horizontalSlider.setMaximum(slider_max)
     window.horizontalSlider.setEnabled(True)
@@ -257,6 +258,7 @@ def test_jump_to_time_recenters_existing_zoom(qtbot, monkeypatch):
     window = EphysBinViewer()
     qtbot.addWidget(window)
     window.data = SpikeGLXDataModel(_FakeArraySR())
+    window._setup_viewers_and_checkboxes()
     window.horizontalSlider.setMaximum(
         int(np.floor(window.data.get_num_samples() / NSAMP_CHUNK))
     )

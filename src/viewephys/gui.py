@@ -99,9 +99,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             bin_file is not None
         ):  # TODO: this should not guard because open_file accepts None?
             self.open_file(file=bin_file)  # set self.data
-
-        self._setup_checkboxes()
-        self._setup_slider()
+            self._setup_viewers_and_checkboxes()
+            self._setup_slider()
 
     def open_file_live(self, *args, **kwargs) -> None:
         """
@@ -166,7 +165,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.pushButton_jumpTime.setEnabled(True)
         self.on_horizontalSliderReleased()
 
-    def _setup_checkboxes(self) -> None:
+    def _setup_viewers_and_checkboxes(self) -> None:
         """Repopulate viewers/cbs based on the current data model."""
         self.viewers: dict[str, EphysViewer | None]
 
