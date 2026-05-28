@@ -596,13 +596,15 @@ class Controller(abc.ABC):
         strip_keys = [key.lstrip("!") for key in keys]
         if not (set(strip_keys).issubset(set(self.model.header.keys()))):
             return
-        if len(keys) == 0:
+        if len(strip_keys) == 0:
             return
 
         to_sort = []
         for key, strip_key in zip(keys, strip_keys, strict=True):
-            invert = -1 if key[0] == "!" else 1
-            to_sort.append(invert * self.model.header[strip_key])
+            data = self.model.header[strip_key]
+            if key[0] == "!":
+                data = -data  # must copy here
+            to_sort.append(data)
 
         self.trace_indices = np.lexsort(to_sort)
         if redraw:
