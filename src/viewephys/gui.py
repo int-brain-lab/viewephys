@@ -139,9 +139,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         sampling_frequency = self.data.get_sampling_frequency()
 
         self.horizontalSlider.setMaximum(int(np.floor(num_samples / NSAMP_CHUNK)))
-        tmax = (
-            np.floor(num_samples / NSAMP_CHUNK) * NSAMP_CHUNK / sampling_frequency
-        )  # TODO: move to data? figure out NSAMP_CHUNK
+        tmax = np.floor(num_samples / NSAMP_CHUNK) * NSAMP_CHUNK / sampling_frequency
         self.label_smax.setText(f"{tmax:0.2f}s")
 
         neuropixel_version = self.data.get_neuropixels_version()
@@ -189,7 +187,6 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         sampling_frequency = self.data.get_sampling_frequency()
         num_samples = self.data.get_num_samples()
 
-        # TODO: data model could have convenience functions for time↔sample conversion
         requested_sample = int(round(t * sampling_frequency))
         requested_sample = max(0, min(requested_sample, int(num_samples) - 1))
         max_first = max(0, int(num_samples) - NSAMP_CHUNK)
@@ -245,7 +242,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
         # For each preprocessing step, create an EphysViewer
         for k in self.viewers:
-            if not self.cbs[k].isChecked():  # TODO: rename to checkboxes
+            if not self.cbs[k].isChecked():
                 continue
 
             data = self.data.get_data(first, last, k, raw=raw)
@@ -579,7 +576,7 @@ def viewephys(
     data: np.ndarray,
     fs: float,
     channels: dict | None = None,
-    br=None,  # TODO: is this brain region?
+    br=None,
     title: str = "ephys",
     t0: float = 0.0,
     t_scalar: float = T_SCALAR,
