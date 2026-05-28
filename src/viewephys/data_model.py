@@ -249,16 +249,18 @@ class SpikeInterfaceDataModel(AbstractDataModel):
     def get_header(self) -> dict:
         probe = self.first_recording.get_probe()
         positions = probe.contact_positions  # (n_contacts, 2) in µm
-        nc = self.first_recording.get_num_channels()
+        num_channels = self.first_recording.get_num_channels()
+
         _, row = np.unique(positions[:, 1], return_inverse=True)
+
         # col is computed per-shank so shank-relative x values are ranked correctly
-        col = np.zeros(nc, dtype=float)
+        col = np.zeros(num_channels, dtype=float)
         for shank_id in np.unique(probe.shank_ids):
             mask = probe.shank_ids == shank_id
             _, col[mask] = np.unique(positions[mask, 0], return_inverse=True)
 
         geom = {
-            "trace": np.arange(nc),
+            "trace": np.arange(num_channels),
             "shank": probe.shank_ids.astype(int),
             "x": positions[:, 0],
             "y": positions[:, 1],
