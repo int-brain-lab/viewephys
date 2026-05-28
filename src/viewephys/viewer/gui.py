@@ -585,10 +585,10 @@ class Controller(abc.ABC):
 
     def sort(self, keys, redraw=True):
         """
-        Sort the channels based on the keys, which should match
-        the header.
+        Sort the channels based on the passed keys, which should
+        match the entries in the header.
 
-        A "!" can be placed before the key to indicate descending sorting
+        A "!" can be placed before the key for descending sorting
         (lexsort only supports ascending sorting). For example,
         sort(["x"]) will sort by "x" ascending, sort(["!x"]) will sort descending.
         Note this assumes no header begins with "!".
@@ -603,7 +603,7 @@ class Controller(abc.ABC):
         for key, strip_key in zip(keys, strip_keys, strict=True):
             data = self.model.header[strip_key]
             if key[0] == "!":
-                data = -data  # must copy here
+                data = -data  # must copy here to not overwrite model header
             to_sort.append(data)
 
         self.trace_indices = np.lexsort(to_sort)
