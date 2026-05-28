@@ -39,7 +39,7 @@ class AbstractDataModel(abc.ABC):
     def get_saturation_adc(self) -> float: ...
 
     @abc.abstractmethod
-    def get_geometry(self) -> dict: ...
+    def get_header(self) -> dict: ...
 
 
 class SpikeGLXDataModel(AbstractDataModel):
@@ -103,7 +103,7 @@ class SpikeGLXDataModel(AbstractDataModel):
         return self.sr[start_sample:end_sample, : self.sr.nc - self.sr.nsync].T
 
     @override
-    def get_geometry(self) -> dict:
+    def get_header(self) -> dict:
         return self.sr.geometry
 
     @override

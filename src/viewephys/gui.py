@@ -253,7 +253,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             viewer = viewephys(
                 data,
                 self.data.get_sampling_frequency(),
-                channels=self.data.get_geometry(),
+                channels=self.data.get_header(),
                 title=k,
                 t0=t0 * T_SCALAR,
                 t_scalar=T_SCALAR,
