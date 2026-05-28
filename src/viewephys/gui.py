@@ -6,7 +6,6 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     import matplotlib
-    from spikeinterface.core import BaseRecording
 
 from pathlib import Path
 
@@ -82,23 +81,27 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.label_smin.setText("0")
         self.show()
 
-        self.viewers: dict[str, EphysViewer | None]
-        self.viewers = {
-            "butterworth": None,
-            "destripe": None,
-            "raw": None,
-            "broadband": None,
-        }
-        self.cbs = {
-            "butterworth": self.cb_butterworth_ap,
-            "broadband": self.cb_butterworth_lf,
-            "destripe": self.cb_destripe_ap,
-            "raw": self.cb_raw_ap,
-        }
-        self.data: SpikeGLXDataModel
+        #        self.viewers: dict[str, EphysViewer | None] = {
+        #            "butterworth": None,
+        #            "destripe": None,
+        #            "raw": None,
+        #            "broadband": None,
+        #        }
+        #       self.cbs: dict[str, QtWidgets.QCheckBox] = {
+        #           "butterworth": self.cb_butterworth_ap,
+        #           "broadband": self.cb_butterworth_lf,
+        #           "destripe": self.cb_destripe_ap,
+        #           "raw": self.cb_raw_ap,
+        #       }
+        self.data: SpikeGLXDataModel | SpikeInterfaceDataModel
 
-        if bin_file is not None:
+        if (
+            bin_file is not None
+        ):  # TODO: this should not guard because open_file accepts None?
             self.open_file(file=bin_file)  # set self.data
+
+        self._setup_checkboxes()
+        self._setup_slider()
 
     def open_file_live(self, *args, **kwargs) -> None:
         """
@@ -141,13 +144,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 )
             self.data = SpikeGLXDataModel(sr)
 
-        elif isinstance(file, BaseRecording):
-            self.data = SpikeInterfaceDataModel(sr)
+        elif isinstance(file, dict):
+            self.data = SpikeInterfaceDataModel(file)
 
-        # enable and set slider, based on the number of samples in the entire file
+    def _setup_slider(self):
         num_samples = self.data.get_num_samples()
         sampling_frequency = self.data.get_sampling_frequency()
 
+        # enable and set slider, based on the number of samples in the entire file
         self.horizontalSlider.setMaximum(int(np.floor(num_samples / NSAMP_CHUNK)))
         tmax = np.floor(num_samples / NSAMP_CHUNK) * NSAMP_CHUNK / sampling_frequency
         self.label_smax.setText(f"{tmax:0.2f}s")
@@ -161,6 +165,39 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.lineEdit_jumpTime.setEnabled(True)
         self.pushButton_jumpTime.setEnabled(True)
         self.on_horizontalSliderReleased()
+
+    def _setup_checkboxes(self) -> None:
+        """Repopulate viewers/cbs based on the current data model."""
+        if isinstance(self.data, SpikeGLXDataModel):
+            self.viewers = {
+                "butterworth": None,
+                "destripe": None,
+                "raw": None,
+                "broadband": None,
+            }
+            self.cbs = {
+                "butterworth": self.cb_butterworth_ap,
+                "broadband": self.cb_butterworth_lf,
+                "destripe": self.cb_destripe_ap,
+                "raw": self.cb_raw_ap,
+            }
+        else:
+            for cb in [
+                self.cb_raw_ap,
+                self.cb_butterworth_ap,
+                self.cb_butterworth_lf,
+                self.cb_destripe_ap,
+            ]:
+                cb.hide()
+            layout = self.frame.layout()
+            self.viewers = {}
+            self.cbs = {}
+            for i, step in enumerate(self.data.recordings_dict):
+                cb = QtWidgets.QCheckBox(step, self.frame)
+                cb.setChecked(i == 0)
+                layout.addWidget(cb)
+                self.viewers[step] = None
+                self.cbs[step] = cb
 
     def _create_top_label(self):
         """"""
@@ -183,6 +220,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             f"{self.data.get_num_channels()} Channels \n"
             f"{saturation_label}"
         )
+        return tlabel
 
     def on_horizontalSliderValueChanged(self) -> None:
         self._first_sample = int(self.horizontalSlider.value()) * NSAMP_CHUNK
@@ -277,6 +315,10 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 t_scalar=T_SCALAR,
                 a_scalar=A_SCALAR,
             )
+            if isinstance(self.data, SpikeInterfaceDataModel):
+                # reorder the spikeinterface channel ordering to match SpikeGLXReader
+                viewer.ctrl.sort(["!x", "y", "shank"])
+
             self.viewers[k] = viewer
 
             prev = prev_ranges.get(k)

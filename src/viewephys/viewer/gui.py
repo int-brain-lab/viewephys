@@ -584,11 +584,18 @@ class Controller(abc.ABC):
         self.view.grab().save(str(file))
 
     def sort(self, keys, redraw=True):
-        if not (set(keys).issubset(set(self.model.header.keys()))):
+        strip_keys = [key.lstrip("!") for key in keys]
+        if not (set(strip_keys).issubset(set(self.model.header.keys()))):
             return
         if len(keys) == 0:
             return
-        self.trace_indices = np.lexsort([self.model.header[k] for k in keys])
+
+        to_sort = []
+        for key, strip_key in zip(keys, strip_keys):
+            invert = -1 if key[0] == "!" else 1
+            to_sort.append(invert * self.model.header[strip_key])
+
+        self.trace_indices = np.lexsort(to_sort)
         if redraw:
             self.redraw()
 
