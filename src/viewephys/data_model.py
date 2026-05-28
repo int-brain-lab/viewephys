@@ -31,16 +31,16 @@ class AbstractDataModel(abc.ABC):
     def get_recording_length(self) -> float: ...
 
     @abc.abstractmethod
-    def get_file_path(self) -> Path: ...
+    def get_file_path(self) -> Path | None: ...
 
     @abc.abstractmethod
-    def get_probe_information(self): ...
+    def get_probe_information(self) -> str | None: ...
 
     @abc.abstractmethod
     def get_num_channels(self) -> int: ...
 
     @abc.abstractmethod
-    def get_saturation_adc(self) -> float: ...
+    def get_saturation_adc(self) -> float | None: ...
 
     @abc.abstractmethod
     def get_header(self) -> dict: ...
@@ -158,7 +158,7 @@ class SpikeGLXDataModel(AbstractDataModel):
         return self.sr.file_bin
 
     @override
-    def get_probe_information(self):
+    def get_probe_information(self) -> str:
         return f"Neuropixels v{self.sr.major_version}"
 
     @override
@@ -167,7 +167,7 @@ class SpikeGLXDataModel(AbstractDataModel):
         return self.sr.nc
 
     @override
-    def get_saturation_adc(self) -> float:
+    def get_saturation_adc(self) -> float | None:
         """ADC saturation level in µV."""
         return self.sr.range_volts[0] * 1e6
 
@@ -215,7 +215,14 @@ class SpikeInterfaceDataModel(AbstractDataModel):
                 rec.get_probe().contact_positions, first_contact_positions
             )
 
-    def get_data(self, start_sample, end_sample, step, raw=None):
+    @override
+    def get_data(
+        self,
+        start_sample: int,
+        end_sample: int,
+        step: str,
+        raw: np.ndarray | None = None,
+    ) -> np.ndarray:
         assert step in self.recordings_dict, (
             "somehow the step names have become disconnected"
         )
@@ -234,14 +241,12 @@ class SpikeInterfaceDataModel(AbstractDataModel):
     # Implemented by GitHub Copilot (Claude Sonnet 4.6) — May 2026
     # -------------------------------------------------------------------------
 
-    def get_raw(self, start_sample, end_sample):
-        # SpikeInterface recordings carry their own preprocessing chain; the
-        # shared raw-read cache used by SpikeGLXDataModel is not needed here.
-        # Returning None is safe: get_data() ignores the `raw` argument for
-        # this model.
+    def get_raw(self, start_sample: int, end_sample: int) -> None:
+        """SpikeInterface recordings carry their own preprocessing chain"""
         return None
 
-    def get_geometry(self):
+    @override
+    def get_header(self) -> dict:
         probe = self.first_recording.get_probe()
         positions = probe.contact_positions  # (n_contacts, 2) in µm
         nc = self.first_recording.get_num_channels()
@@ -275,29 +280,36 @@ class SpikeInterfaceDataModel(AbstractDataModel):
 
         return geom
 
-    def get_num_samples(self):
+    @override
+    def get_num_samples(self) -> int:
         return self.first_recording.get_num_samples(segment_index=0)
 
-    def get_sampling_frequency(self):
+    @override
+    def get_sampling_frequency(self) -> float:
         return self.first_recording.get_sampling_frequency()
 
-    def get_recording_length(self):
+    @override
+    def get_recording_length(self) -> float:
         return self.get_num_samples() / self.get_sampling_frequency()
 
-    def get_file_path(self):
+    @override
+    def get_file_path(self) -> None:
         # SpikeInterface recordings are not necessarily file-backed.
         return None
 
-    def get_probe_information(self):
+    @override
+    def get_probe_information(self) -> str | None:
         probe = self.first_recording.get_probe()
         a = probe.annotations
         parts = [a.get("manufacturer"), a.get("model_name"), a.get("serial_number")]
         return ", ".join(p for p in parts if p) or None
 
-    def get_num_channels(self):
+    @override
+    def get_num_channels(self) -> int:
         return self.first_recording.get_num_channels()
 
-    def get_saturation_adc(self):
+    @override
+    def get_saturation_adc(self) -> None:
         # ADC saturation range is hardware-specific and not available through
         # the SpikeInterface API.
         return None
