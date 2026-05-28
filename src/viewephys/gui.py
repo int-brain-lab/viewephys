@@ -128,7 +128,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if file == "":
                 return
 
-        if isinstance(file, str) or isinstance(file, Path):
+        if isinstance(file, (str, Path)):
             file = Path(file)
             self.settings.setValue("bin_file_path", str(file.parent))
             ReaderClass = spikeglx.Reader if not live else spikeglx.OnlineReader
@@ -168,6 +168,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
     def _setup_checkboxes(self) -> None:
         """Repopulate viewers/cbs based on the current data model."""
+        self.viewers: dict[str, EphysViewer | None]
+
         if isinstance(self.data, SpikeGLXDataModel):
             self.viewers = {
                 "butterworth": None,
