@@ -8,6 +8,10 @@ from typing_extensions import override
 
 
 class AbstractDataModel(abc.ABC):
+    """
+    Abstract class to interface with data loaded from different backends.
+    """
+
     @abc.abstractmethod
     def get_data(
         self,
@@ -43,6 +47,8 @@ class AbstractDataModel(abc.ABC):
 
 
 class SpikeGLXDataModel(AbstractDataModel):
+    """Data model wrapping ``spikeglx.Reader``."""
+
     def __init__(self, sr) -> None:
         self.sr = sr
 
@@ -54,6 +60,28 @@ class SpikeGLXDataModel(AbstractDataModel):
         step: str,
         raw: np.ndarray | None = None,
     ) -> np.ndarray:
+        """
+        Return the raw or preprocessed data.
+
+        Here the steps are fixed by the existing IBL preprocessing pipeline.
+
+        Parameters
+        ----------
+        start_sample
+            First sample of the data to return
+        end_sample
+            Last sample (exclusive) of the data to return
+        step
+            The preprocessing step: one of ``"raw"``, ``"destripe"``,
+            ``"butterworth"``, or ``"broadband"``.
+        raw
+            Option to pass the raw data. This can be used when calling this many times
+            and do not want to repeatedly slice the raw data.
+
+        Returns
+        -------
+        np.ndarray of shape ``(n_channels, n_samples)``.
+        """
         if raw is None:
             raw = self.get_raw(start_sample, end_sample)
 
@@ -98,38 +126,48 @@ class SpikeGLXDataModel(AbstractDataModel):
         return data
 
     def get_raw(self, start_sample: int, end_sample: int) -> np.ndarray:
-        """A temporary helper function for getting the raw data to match
-        the old logic flow, without confusing recursion calling of get_data"""
+        """Return raw data as ``(n_channels, n_samples)``, sync channels excluded."""
         return self.sr[start_sample:end_sample, : self.sr.nc - self.sr.nsync].T
 
     @override
     def get_header(self) -> dict:
+        """
+        Returns the header holding information on the probe,
+        including x, y positions, shank mask, adc index, sample offset.
+        """
         return self.sr.geometry
 
     @override
     def get_num_samples(self) -> int:
+        """Number of samples in the recording."""
         return self.sr.ns
 
     @override
     def get_sampling_frequency(self) -> float:
+        """Sampling frequency (Hz) of the recording."""
         return self.sr.fs
 
     @override
     def get_recording_length(self) -> float:
+        """Recording length in seconds."""
         return self.sr.rl
 
     @override
     def get_file_path(self) -> Path:
+        """Path to the raw .bin file."""
         return self.sr.file_bin
 
     @override
     def get_neuropixels_version(self) -> int:
+        """Neuropixels probe major version."""
         return self.sr.major_version
 
     @override
     def get_num_channels(self) -> int:
+        """Total channel count including sync channels."""
         return self.sr.nc
 
     @override
     def get_saturation_adc(self) -> float:
+        """ADC saturation level in µV."""
         return self.sr.range_volts[0] * 1e6
