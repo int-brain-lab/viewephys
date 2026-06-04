@@ -1,9 +1,16 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 from qtpy import QtCore, QtWidgets
 
 from viewephys.data_model import SpikeGLXDataModel
-from viewephys.gui import NSAMP_CHUNK, EphysBinViewer, create_app, viewephys
+from viewephys.gui import (
+    NSAMP_CHUNK,
+    EphysBinViewer,
+    create_app,
+    viewephys,
+)
 from viewephys.tests.test_viewer_helpers import synthetic_seismic_data
 from viewephys.viewer.gui import EasyQC, viewseis
 

@@ -102,7 +102,7 @@ class Model:
         return np.arange(self.ns) * self.si + self.t0
 
 
-class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
+class EasyQC(QtWidgets.QMainWindow):
     """Reusable seismic-style viewer used by viewephys."""
 
     model: Model
@@ -139,7 +139,16 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
         )
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        # ``Ui_MainWindow`` is intentionally NOT a base class of ``EasyQC``.
+        # In PySide6, ``QMainWindow.__init__`` cooperatively calls
+        # ``super().__init__()``, which would dispatch to ``Ui_MainWindow.__init__``
+        # (next in the MRO) *before* the C++ ``QMainWindow`` is fully constructed.
+        # ``Ui_MainWindow.__init__`` immediately calls ``self.setObjectName(...)``,
+        # which trips shiboken's "base class '__init__' not called" check the first
+        # time a most-derived subclass (e.g. ``StimArtefactViewer``) is instantiated.
+        # Initialize Qt first, then run the Ui setup manually.
+        QtWidgets.QMainWindow.__init__(self, *args, **kwargs)
+        Ui_MainWindow.__init__(self)
         self.layers = {}
         self.model = Model(None, None)
         self._display_mode = DISPLAY_MODE_DENSITY
@@ -153,8 +162,15 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
         self.plotItem_seismic.setBackground(background_color)
         self.plotItem_seismic.addItem(self.imageItem_seismic)
         self.plotDataItem_wiggle = pg.PlotDataItem(visible=False)
-        self.plotDataItem_wiggle.setPen(pg.mkPen("#ebc000"))
+        self.plotDataItem_wiggle.setPen(pg.mkPen("#000000"))
         self.plotItem_seismic.addItem(self.plotDataItem_wiggle)
+        # Dim horizontal guide line at every wiggle baseline. Useful for
+        # visually verifying that trace offsets are evenly spaced.
+        self.plotDataItem_wiggle_baselines = pg.PlotDataItem(visible=False)
+        self.plotDataItem_wiggle_baselines.setPen(
+            pg.mkPen(0, 0, 0, 40, width=1)
+        )
+        self.plotItem_seismic.addItem(self.plotDataItem_wiggle_baselines)
         self.viewBox_seismic = self.plotItem_seismic.getPlotItem().getViewBox()
         self._init_menu()
         self._init_cmenu()
@@ -192,7 +208,9 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
         scene.sigMouseClicked.connect(self.mouseClick)
         self.lineEdit_gain.returnPressed.connect(self.editGain)
         self.lineEdit_sort.returnPressed.connect(self.editSort)
-        self.comboBox_header.activated[str].connect(self.ctrl.set_header)
+        # PySide6 no longer exposes the ``activated(QString)`` overload; use the
+        # ``textActivated`` signal which emits the selected item's text.
+        self.comboBox_header.textActivated.connect(self.ctrl.set_header)
         self.viewBox_seismic.sigRangeChanged.connect(self.on_sigRangeChanged)
         self.horizontalScrollBar.valueChanged.connect(self.on_horizontalSliderChange)
         self.verticalScrollBar.valueChanged.connect(self.on_verticalSliderChange)
@@ -201,6 +219,11 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
         )
         self.radio_wiggle.toggled.connect(
             lambda checked: checked and self.set_display_mode(DISPLAY_MODE_WIGGLE)
+        )
+        # Toggling auto-space only affects wiggle mode; redraw via the active
+        # controller so density mode is a no-op.
+        self.checkBox_wiggle_autospace.toggled.connect(
+            lambda _checked: self.ctrl.set_model(reset_viewbox=False)
         )
 
     def _init_menu(self):
@@ -420,12 +443,14 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
             self.imageItem_seismic.setVisible(True)
             self.plotDataItem_wiggle.setVisible(False)
             self.plotDataItem_wiggle.clear()
+            self.plotDataItem_wiggle_baselines.setVisible(False)
+            self.plotDataItem_wiggle_baselines.clear()
             self.plotItem_seismic.setBackground("#000000")
         elif mode == DISPLAY_MODE_WIGGLE:
             self.imageItem_seismic.clear()
             self.imageItem_seismic.setVisible(False)
             self.plotDataItem_wiggle.setVisible(True)
-            self.plotItem_seismic.setBackground("#193600")
+            self.plotItem_seismic.setBackground("#ffffff")
         self.ctrl.set_model(reset_viewbox=False)
 
 
@@ -650,15 +675,72 @@ class ControllerWiggle(Controller):
     def _update_plotItem(self, tlim=None, clim=None):
         if self.model.taxis == 0:
             xlim, ylim = (tlim, clim)
-            wiggle_y = np.r_[self.model.data, np.ones(self.model.ntr)[np.newaxis, :]]
+            # Honour any subset/reorder selected via ``sort()`` or by writing
+            # ``trace_indices`` directly. The model itself isn't permuted.
+            idx = (
+                self.trace_indices
+                if self.trace_indices is not None
+                else np.arange(self.model.ntr)
+            )
+            data = self.model.data[:, idx]
+            ntr = data.shape[1]
+            # Spacing between adjacent trace baselines. Default ``1`` matches
+            # the historical behaviour where overflow is allowed (a high-gain
+            # or large-amplitude trace will visually overlap its neighbours).
+            # When the Auto-space checkbox is on, use the largest per-trace
+            # peak-to-peak amplitude (after gain) so no overlap can occur.
+            gain_div = 10 ** (self.gain / 20)
+            autospace = bool(
+                getattr(self.view, "checkBox_wiggle_autospace", None)
+                and self.view.checkBox_wiggle_autospace.isChecked()
+            )
+            if autospace and ntr > 0 and data.size > 0:
+                ptp = np.nanmax(data, axis=0) - np.nanmin(data, axis=0)
+                spacing = float(np.nanmax(ptp) / gain_div) if ptp.size else 1.0
+                if not np.isfinite(spacing) or spacing <= 0:
+                    spacing = 1.0
+            else:
+                spacing = 1.0
+            # Remove per-trace DC so each trace sits centred on its integer
+            # baseline. Without this, traces with different mean offsets float
+            # away from their slot and visually look unevenly spaced.
+            if ntr > 0 and data.size > 0:
+                data = data - np.nanmean(data, axis=0, keepdims=True)
+            # In Auto-space mode, also normalise each trace to the SAME visual
+            # amplitude (90% of one slot). Without this, loud channels look
+            # like fat bands and quiet ones like flat lines, which the eye
+            # reads as uneven spacing even though offsets are uniform.
+            if autospace and ntr > 0 and data.size > 0:
+                ptp_per = np.nanmax(data, axis=0) - np.nanmin(data, axis=0)
+                ptp_per = np.where(ptp_per > 0, ptp_per, 1.0)
+                data = data / ptp_per * (spacing * 0.9 * gain_div)
+            wiggle_y = np.r_[data, np.full((1, ntr), np.nan)]
             wiggle_y = (
-                wiggle_y / (10 ** (self.gain / 20))
-                + np.arange(self.model.ntr)[np.newaxis, :]
+                wiggle_y / gain_div
+                + (np.arange(ntr) * spacing)[np.newaxis, :]
             )
             self.view.plotDataItem_wiggle.setData(
-                x=np.tile(np.r_[self.tscale, np.nan], self.model.ntr),
+                x=np.tile(np.r_[self.tscale, np.nan], ntr),
                 y=wiggle_y.T.flatten(),
             )
+            # Draw a faint horizontal guide at each trace baseline so the
+            # actual offsets are visible. If guides look uneven, offsets are
+            # wrong; if guides are uniform but traces aren't, the issue is
+            # amplitude / paired channels, not spacing.
+            if ntr > 0:
+                t0 = float(self.tscale[0])
+                t1 = float(self.tscale[-1])
+                ys = np.arange(ntr) * spacing
+                gx = np.tile(np.array([t0, t1, np.nan]), ntr)
+                gy = np.repeat(ys, 3)
+                gy[2::3] = np.nan
+                self.view.plotDataItem_wiggle_baselines.setData(x=gx, y=gy)
+                self.view.plotDataItem_wiggle_baselines.setVisible(True)
+            # When auto-spacing, expand the plot's y-limits so all traces fit.
+            if autospace and clim is None:
+                self.view.viewBox_seismic.setYRange(
+                    -spacing, max(0.0, (ntr - 1) * spacing) + spacing, padding=0
+                )
         elif self.model.taxis == 1:
             xlim, ylim = (clim, tlim)
         else:
