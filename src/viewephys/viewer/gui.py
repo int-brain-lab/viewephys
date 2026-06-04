@@ -593,7 +593,7 @@ class Controller(abc.ABC):
         sort(["x"]) will sort by "x" ascending, sort(["!x"]) will sort descending.
         Note this assumes no header begins with "!".
         """
-        strip_keys = [key.lstrip("!") for key in keys]
+        strip_keys = [key.removeprefix("!") for key in keys]
         if not (set(strip_keys).issubset(set(self.model.header.keys()))):
             return
         if len(strip_keys) == 0:
