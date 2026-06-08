@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -6,12 +6,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
-from iblutil.numerical import ismember
-from neuropixel import trace_header
 from qtpy import QtCore, QtGui, QtWidgets
 
 from viewephys.data_model import SpikeInterfaceDataModel
-from viewephys.gui import A_SCALAR, NSAMP_CHUNK, T_SCALAR, EphysBinViewer, EphysViewer
+from viewephys.gui import A_SCALAR, T_SCALAR, EphysBinViewer, EphysViewer
 from viewephys.viewer.gui import DISPLAY_MODE_WIGGLE, ControllerWiggle
 from viewephys.viewer.qt import create_app
 
@@ -28,13 +26,72 @@ _REGION_PEN = pg.mkPen(80, 80, 80, width=1)
 _REGION_SELECTED_PEN = pg.mkPen(0, 60, 200, width=2)
 
 
+# CSV column names used on disk. The on-disk format stores integer sample
+# indices (one per channel sample); the in-memory ``events`` frame uses
+# floating-point seconds for direct plotting against the seismic view.
+EVENTS_CSV_START_COL = "start_sample"
+EVENTS_CSV_STOP_COL = "end_sample"
+
+
+def _events_from_samples(df: pd.DataFrame, fs: float) -> pd.DataFrame:
+    """Convert a CSV-formatted events frame (samples) to seconds.
+
+    The input is expected to contain ``start_sample`` and ``end_sample``
+    columns (integer samples). The returned frame carries the in-memory
+    ``start`` / ``stop`` columns in seconds and is already sorted /
+    de-NaN'd to the same shape the viewer expects.
+    """
+    if not {EVENTS_CSV_START_COL, EVENTS_CSV_STOP_COL}.issubset(df.columns):
+        raise ValueError(
+            f"events frame must contain {EVENTS_CSV_START_COL!r} and "
+            f"{EVENTS_CSV_STOP_COL!r} columns; got {tuple(df.columns)}."
+        )
+    out = pd.DataFrame(
+        {
+            "start": df[EVENTS_CSV_START_COL].astype(float) / float(fs),
+            "stop": df[EVENTS_CSV_STOP_COL].astype(float) / float(fs),
+        }
+    )
+    out = out.dropna().sort_values("start", kind="mergesort").reset_index(drop=True)
+    return out
+
+
+def _events_to_samples(df: pd.DataFrame, fs: float) -> pd.DataFrame:
+    """Convert an in-memory events frame (seconds) to integer-sample CSV form."""
+    starts = np.rint(df["start"].to_numpy() * float(fs)).astype(np.int64)
+    stops = np.rint(df["stop"].to_numpy() * float(fs)).astype(np.int64)
+    return pd.DataFrame(
+        {
+            EVENTS_CSV_START_COL: starts,
+            EVENTS_CSV_STOP_COL: stops,
+        }
+    )
+
+
 class StimArtefactViewer(EphysViewer):
     """Ephys viewer extended with stim-artefact region editing.
 
     The viewer owns the in-memory ``events`` ``DataFrame`` (columns
-    ``start, stop``) and the CSV path. The CSV file is written only when the
-    user clicks **Save**; **Load** re-reads it and discards in-memory edits.
+    ``start, stop`` in **seconds**) and the CSV path. The CSV file uses
+    the integer-sample columns ``start_sample`` / ``end_sample`` (see
+    :data:`EVENTS_CSV_START_COL` / :data:`EVENTS_CSV_STOP_COL`); sample
+    indices are converted to/from seconds at the load/save boundary
+    using the active sampling frequency. The CSV file is written only
+    when the user clicks **Save**; **Load** re-reads it and discards
+    in-memory edits.
+
+    Signals
+    -------
+    sigJumpToTimeRequested(float)
+        Emitted when the user navigates to an event (combo-box change,
+        previous/next, add) and the selected region is **outside** the
+        currently visible x-range. The payload is the centre time (in
+        seconds) of the chosen artefact event. The owning bin viewer is
+        expected to connect this signal to its ``jump_to_time`` slot so
+        the data window is reloaded around the new time.
     """
+
+    sigJumpToTimeRequested = QtCore.Signal(float)
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -86,7 +143,7 @@ class StimArtefactViewer(EphysViewer):
         self._connect_stim_signals()
 
     @staticmethod
-    def _get_or_create(title=None) -> "StimArtefactViewer":
+    def _get_or_create(title=None) -> StimArtefactViewer:
         ev = next(
             filter(
                 lambda e: e.isVisible() and e.windowTitle() == title,
@@ -262,6 +319,16 @@ class StimArtefactViewer(EphysViewer):
         self.comboBox_stim_event_index = QtWidgets.QComboBox(parent)
         self.comboBox_stim_event_index.setObjectName("comboBox_stim_event_index")
         self.comboBox_stim_event_index.setMinimumWidth(140)
+        # Editable so the user can type an event index directly and
+        # press Enter to jump. ``NoInsert`` keeps the dropdown items
+        # authoritative (typed text never adds a new item).
+        self.comboBox_stim_event_index.setEditable(True)
+        self.comboBox_stim_event_index.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
+        # Helpful tooltip so the behaviour is discoverable.
+        self.comboBox_stim_event_index.setToolTip(
+            "Type an event index and press Enter to jump to it. The "
+            "prev / next arrows step by the configured step size."
+        )
 
         # prev / step / next row (â† [step] â†’)
         nav_widget = QtWidgets.QWidget(parent)
@@ -339,16 +406,12 @@ class StimArtefactViewer(EphysViewer):
         btn_layout.setContentsMargins(0, 0, 0, 0)
         btn_layout.setSpacing(4)
         self.pushButton_stim_channels_all = QtWidgets.QPushButton("All", btn_widget)
-        self.pushButton_stim_channels_all.setObjectName(
-            "pushButton_stim_channels_all"
-        )
+        self.pushButton_stim_channels_all.setObjectName("pushButton_stim_channels_all")
         self.pushButton_stim_channels_none = QtWidgets.QPushButton("None", btn_widget)
         self.pushButton_stim_channels_none.setObjectName(
             "pushButton_stim_channels_none"
         )
-        self.pushButton_stim_channels_apply = QtWidgets.QPushButton(
-            "Apply", btn_widget
-        )
+        self.pushButton_stim_channels_apply = QtWidgets.QPushButton("Apply", btn_widget)
         self.pushButton_stim_channels_apply.setObjectName(
             "pushButton_stim_channels_apply"
         )
@@ -362,11 +425,23 @@ class StimArtefactViewer(EphysViewer):
 
         vbox.addWidget(content)
         self._channels_content = content
+        # Keep a reference to the button row so panel-width calculations
+        # can size to the (more predictable) widget widths instead of the
+        # variable-length channel-label text.
+        self._channels_btn_widget = btn_widget
 
     def _connect_stim_signals(self) -> None:
         self.comboBox_stim_event_index.currentIndexChanged.connect(
             self._on_combo_changed
         )
+        # When the combo is editable, pressing Enter inside its line edit
+        # should also navigate (the dropdown's currentIndexChanged only
+        # fires when the typed text matches an existing item, which it
+        # won't if the user types just the index ``"5"`` rather than the
+        # full display label).
+        combo_line_edit = self.comboBox_stim_event_index.lineEdit()
+        if combo_line_edit is not None:
+            combo_line_edit.returnPressed.connect(self._on_event_index_entered)
         self.pushButton_stim_prev.clicked.connect(self._on_prev)
         self.pushButton_stim_next.clicked.connect(self._on_next)
         self.pushButton_stim_add.clicked.connect(self._on_add)
@@ -398,7 +473,7 @@ class StimArtefactViewer(EphysViewer):
         self,
         events: pd.DataFrame,
         csv_path: Path,
-        bin_viewer: "StimArtefactBinViewer",
+        bin_viewer: StimArtefactBinViewer,
     ) -> None:
         """Attach the editable events table backing the regions."""
         self.csv_path = Path(csv_path)
@@ -453,7 +528,33 @@ class StimArtefactViewer(EphysViewer):
     def _save_csv(self) -> None:
         if self.csv_path is None:
             return
-        self.events.to_csv(self.csv_path, index=False)
+        fs = self._get_sampling_frequency()
+        if fs is None:
+            # Cannot serialise to sample indices without a known sampling
+            # frequency; skip writing rather than silently producing a
+            # malformed file.
+            return
+        _events_to_samples(self.events, fs).to_csv(self.csv_path, index=False)
+
+    def _get_sampling_frequency(self) -> float | None:
+        """Best-effort lookup of the active sampling frequency.
+
+        Prefers the owning bin viewer's data model (authoritative, set
+        before the viewer is shown), then falls back to ``1 / model.si``
+        once the viewer has been populated with data.
+        """
+        bin_viewer = self._bin_viewer
+        if bin_viewer is not None and getattr(bin_viewer, "data", None) is not None:
+            try:
+                fs = float(bin_viewer.data.get_sampling_frequency())
+                if fs > 0:
+                    return fs
+            except Exception:
+                pass
+        si = getattr(getattr(self, "model", None), "si", None)
+        if si and si > 0:
+            return 1.0 / float(si)
+        return None
 
     def _refresh_event_combo(self) -> None:
         self._updating_ui = True
@@ -589,8 +690,6 @@ class StimArtefactViewer(EphysViewer):
     def _scroll_to_current(self) -> None:
         if self._current_event_idx is None or self.events.empty:
             return
-        if self._bin_viewer is None:
-            return
         row = self.events.iloc[self._current_event_idx]
         center = (float(row["start"]) + float(row["stop"])) / 2.0
         # Only jump (which reloads the chunk and resets the view) when the
@@ -604,7 +703,26 @@ class StimArtefactViewer(EphysViewer):
                 return
         except Exception:
             pass
-        self._bin_viewer.jump_to_time(center)
+        # Decoupled: emit a signal carrying the requested centre time. The
+        # bin viewer (or any other listener) is responsible for jumping
+        # the data window. Falls back to the legacy direct call when no
+        # listener has been connected yet so existing code paths stay
+        # functional during the transition.
+        if self.receivers(self.sigJumpToTimeRequested) > 0:
+            # Queue the jump onto the next Qt event-loop turn so the
+            # current navigation slot (button click / combo change)
+            # finishes before the bin viewer rebuilds the same viewer and
+            # deletes/recreates region items. Re-entering that reload path
+            # synchronously has been observed to destabilize the kernel.
+            QtCore.QTimer.singleShot(
+                0,
+                lambda center=float(center): self.sigJumpToTimeRequested.emit(center),
+            )
+        elif self._bin_viewer is not None:
+            QtCore.QTimer.singleShot(
+                0,
+                lambda center=float(center): self._bin_viewer.jump_to_time(center),
+            )
 
     def _get_step(self) -> int:
         text = self.lineEdit_stim_step.text().strip()
@@ -620,6 +738,39 @@ class StimArtefactViewer(EphysViewer):
         if self._updating_ui or idx < 0 or idx >= len(self.events):
             return
         self._current_event_idx = idx
+        self._sync_time_fields_to_current()
+        self._apply_region_highlight()
+        self._scroll_to_current()
+
+    def _on_event_index_entered(self) -> None:
+        """Parse the editable combo's text and jump to that event index.
+
+        Accepts either a bare integer (``"5"``) or the full display label
+        starting with one (``"5 (1.234, 2.345)"``). Out-of-range entries
+        are clamped to ``[0, len - 1]``; unparseable entries revert the
+        text back to the current selection.
+        """
+        if self.events.empty:
+            return
+        text = self.comboBox_stim_event_index.currentText().strip()
+        if text == "":
+            self._sync_combo_to_current()
+            return
+        # Pull off the leading integer; ignore the rest of the label.
+        head = text.split(None, 1)[0].split("(", 1)[0]
+        try:
+            new_idx = int(head)
+        except ValueError:
+            self._sync_combo_to_current()
+            return
+        new_idx = max(0, min(new_idx, len(self.events) - 1))
+        if new_idx == self._current_event_idx:
+            # Re-sync so a stale typed string is replaced with the canonical
+            # label and the cursor / selection lands consistently.
+            self._sync_combo_to_current()
+            return
+        self._current_event_idx = new_idx
+        self._sync_combo_to_current()
         self._sync_time_fields_to_current()
         self._apply_region_highlight()
         self._scroll_to_current()
@@ -703,14 +854,17 @@ class StimArtefactViewer(EphysViewer):
     def _on_load(self) -> None:
         if self.csv_path is None or not self.csv_path.exists():
             return
+        fs = self._get_sampling_frequency()
+        if fs is None:
+            return
         df = pd.read_csv(self.csv_path)
-        if not {"start", "stop"}.issubset(df.columns):
+        if not {EVENTS_CSV_START_COL, EVENTS_CSV_STOP_COL}.issubset(df.columns):
             return
         # ``Load`` discards the entire undo/redo history: the on-disk file is
         # treated as the new ground truth.
         self._undo_stack.clear()
         self._redo_stack.clear()
-        self._set_events(df, record_history=False)
+        self._set_events(_events_from_samples(df, fs), record_history=False)
 
     # ------------------------------------------------------------------
     # Channel selection
@@ -730,9 +884,7 @@ class StimArtefactViewer(EphysViewer):
         self._apply_channel_selection()
 
     @staticmethod
-    def _filter_indices(
-        full: np.ndarray, selected: set[int] | None
-    ) -> np.ndarray:
+    def _filter_indices(full: np.ndarray, selected: set[int] | None) -> np.ndarray:
         """Filter ``full`` (sorted trace indices) by ``selected`` (originals).
 
         ``None`` selection means show every channel. An empty intersection
@@ -778,10 +930,7 @@ class StimArtefactViewer(EphysViewer):
                 item = QtWidgets.QListWidgetItem(self._channel_label(trace_idx))
                 item.setData(QtCore.Qt.UserRole, trace_idx)
                 self.listWidget_stim_channels.addItem(item)
-                if (
-                    self._selected_traces is None
-                    or trace_idx in self._selected_traces
-                ):
+                if self._selected_traces is None or trace_idx in self._selected_traces:
                     item.setSelected(True)
         finally:
             self._updating_ui = False
@@ -794,24 +943,40 @@ class StimArtefactViewer(EphysViewer):
             self.groupBox_channels.setMaximumWidth(new_max)
 
     def _compute_channels_max_width(self) -> int:
-        """Width sized to the widest item label + scrollbar / margins.
+        """Width sized to the **button row** rather than the channel labels.
 
-        Falls back to a sensible default when the list is empty (e.g. at
-        construction time before any data has been loaded).
+        Earlier revisions sized the group box to the widest channel-label
+        text (which made the panel jump around with the channel
+        numbering). The Apply / None / All button row, on the other hand,
+        is fixed in width regardless of header content, so it is a far
+        more stable target. We add the group-box / list margins and the
+        list's vertical scrollbar width so the channel list still fits
+        inside without horizontal clipping.
         """
-        fm = self.listWidget_stim_channels.fontMetrics()
-        widest_text = 0
-        for i in range(self.listWidget_stim_channels.count()):
-            text = self.listWidget_stim_channels.item(i).text()
-            widest_text = max(widest_text, fm.horizontalAdvance(text))
-        if widest_text == 0:
-            widest_text = fm.horizontalAdvance("#999 shank=9 x=999 y=999")
-        # Account for the list's frame, scrollbar, and the surrounding
-        # group-box margins / title checkbox.
+        btn_widget = getattr(self, "_channels_btn_widget", None)
+        if btn_widget is not None:
+            btn_width = btn_widget.sizeHint().width()
+        else:
+            # Sum the button hints directly as a defensive fallback.
+            btn_width = sum(
+                b.sizeHint().width()
+                for b in (
+                    getattr(self, "pushButton_stim_channels_all", None),
+                    getattr(self, "pushButton_stim_channels_none", None),
+                    getattr(self, "pushButton_stim_channels_apply", None),
+                )
+                if b is not None
+            )
+        if btn_width <= 0:
+            btn_width = 200
+        # Account for the list's vertical scrollbar and the surrounding
+        # group-box margins / title checkbox so the buttons aren't pushed
+        # against the panel edge and the list doesn't add a horizontal
+        # scrollbar.
         scrollbar = QtWidgets.QApplication.style().pixelMetric(
             QtWidgets.QStyle.PM_ScrollBarExtent
         )
-        return widest_text + scrollbar + 40
+        return btn_width + scrollbar + 24
 
     def _update_channel_count_label(self) -> None:
         total = self.listWidget_stim_channels.count()
@@ -858,12 +1023,8 @@ class StimArtefactViewer(EphysViewer):
             # so the auto-space ``setYRange`` isn't clamped to ``[-0.5,
             # ntr - 0.5]``. ``setLimits(yMin=None)`` is a no-op in
             # pyqtgraph; use ``±inf`` to actually disable the clamp.
-            self.plotItem_seismic.setLimits(
-                yMin=-float("inf"), yMax=float("inf")
-            )
-            self.plotItem_header_v.setLimits(
-                yMin=-float("inf"), yMax=float("inf")
-            )
+            self.plotItem_seismic.setLimits(yMin=-float("inf"), yMax=float("inf"))
+            self.plotItem_header_v.setLimits(yMin=-float("inf"), yMax=float("inf"))
             active._update_plotItem()
             active.set_header()
             # Lock the wiggle view to the actual trace bounds + a small
@@ -920,9 +1081,7 @@ class StimArtefactViewer(EphysViewer):
         if not items or len(items) == total:
             self._selected_traces = None
         else:
-            self._selected_traces = {
-                int(it.data(QtCore.Qt.UserRole)) for it in items
-            }
+            self._selected_traces = {int(it.data(QtCore.Qt.UserRole)) for it in items}
         self._update_channel_count_label()
         self._apply_channel_selection()
 
@@ -1107,9 +1266,7 @@ class _StimControllerWiggle(ControllerWiggle):
             ptp_per = np.where(ptp_per > 0, ptp_per, 1.0)
             ov = ov / ptp_per * (spacing * 0.9 * gain_div)
         wiggle_y = np.r_[ov, np.full((1, ntr), np.nan)]
-        wiggle_y = (
-            wiggle_y / gain_div + (np.arange(ntr) * spacing)[np.newaxis, :]
-        )
+        wiggle_y = wiggle_y / gain_div + (np.arange(ntr) * spacing)[np.newaxis, :]
         item.setData(
             x=np.tile(np.r_[self.tscale, np.nan], ntr),
             y=wiggle_y.T.flatten(),
@@ -1142,18 +1299,13 @@ class StimArtefactBinViewer(EphysBinViewer):
             )
 
         self.csv_path = Path(filepath)
-        self.events = pd.read_csv(self.csv_path)
-        if not {"start", "stop"}.issubset(self.events.columns):
+        raw_events = pd.read_csv(self.csv_path)
+        if not {EVENTS_CSV_START_COL, EVENTS_CSV_STOP_COL}.issubset(raw_events.columns):
             raise ValueError(
-                f"{self.csv_path} must contain 'start' and 'stop' columns; got "
-                f"{tuple(self.events.columns)}."
+                f"{self.csv_path} must contain {EVENTS_CSV_START_COL!r} and "
+                f"{EVENTS_CSV_STOP_COL!r} columns; got "
+                f"{tuple(raw_events.columns)}."
             )
-        self.events = (
-            self.events.loc[:, ["start", "stop"]]
-            .dropna()
-            .sort_values("start", kind="mergesort")
-            .reset_index(drop=True)
-        )
         self.viewer_key = viewer_key
         super().__init__(None, *args, **kwargs)
         self.settings = QtCore.QSettings("int-brain-lab", "StimArtefactBinViewer")
@@ -1161,6 +1313,11 @@ class StimArtefactBinViewer(EphysBinViewer):
         self.actionopen.setEnabled(False)
         self.actionopen_live_recording.setEnabled(False)
         self.data = SpikeInterfaceDataModel(recordings_dict)
+        # Convert the on-disk sample indices to in-memory seconds now that
+        # ``self.data`` (and therefore ``fs``) is available.
+        self.events = _events_from_samples(
+            raw_events, self.data.get_sampling_frequency()
+        )
         self._setup_viewers_and_checkboxes()
         self._setup_slider()
 
@@ -1190,14 +1347,15 @@ class StimArtefactBinViewer(EphysBinViewer):
         """Center the loaded window on the requested absolute time."""
         sampling_frequency = self.data.get_sampling_frequency()
         num_samples = self.data.get_num_samples()
+        nsamp_chunk = self._nsamp_chunk
         requested_sample = int(round(float(t) * sampling_frequency))
         requested_sample = max(0, min(requested_sample, int(num_samples) - 1))
-        max_first = max(0, int(num_samples) - NSAMP_CHUNK)
-        first_sample = requested_sample - NSAMP_CHUNK // 2
+        max_first = max(0, int(num_samples) - nsamp_chunk)
+        first_sample = requested_sample - nsamp_chunk // 2
         first_sample = max(0, min(first_sample, max_first))
         center_time = requested_sample / sampling_frequency
         self._first_sample = first_sample
-        slider_value = int(round(first_sample / NSAMP_CHUNK))
+        slider_value = int(round(first_sample / nsamp_chunk))
         slider_value = max(0, min(slider_value, self.horizontalSlider.maximum()))
         self.horizontalSlider.blockSignals(True)
         self.horizontalSlider.setValue(slider_value)
@@ -1224,23 +1382,30 @@ class StimArtefactBinViewer(EphysBinViewer):
             viewer.set_overlay_data(None)
             return
         first = int(self._first_sample)
-        last = first + int(NSAMP_CHUNK)
+        last = first + int(self._nsamp_chunk)
         ov = self.data.get_data(first, last, self.OVERLAY_KEY)
         # ``viewseis`` stores ``data.T * a_scalar`` on the model, so apply
         # the same transform here for shape/scale consistency.
         viewer.set_overlay_data(np.asarray(ov).T * A_SCALAR)
 
-    def on_horizontalSliderReleased(
-        self, center_time: float | None = None
-    ) -> None:
+    def on_horizontalSliderReleased(self, center_time: float | None = None) -> None:
         prev = self.viewers.get(self.viewer_key)
         prev_range = None
+        prev_display_mode = None
         if prev is not None and prev.isVisible():
             xr, yr = prev.viewBox_seismic.viewRange()
             prev_range = (list(xr), list(yr))
+            prev_display_mode = getattr(prev, "_display_mode", None)
+            if prev_display_mode == DISPLAY_MODE_WIGGLE:
+                # Reloading the existing viewer while wiggle is the active
+                # controller has proven unstable when stepping to the next
+                # out-of-view region. Force the data/model refresh through
+                # density mode, then restore wiggle once the new chunk,
+                # regions, and optional overlay are all attached.
+                prev.set_display_mode("density")
 
         first = int(self._first_sample)
-        last = first + int(NSAMP_CHUNK)
+        last = first + int(self._nsamp_chunk)
         t0 = first / self.data.get_sampling_frequency()
         data = self.data.get_data(first, last, self.viewer_key)
 
@@ -1263,6 +1428,14 @@ class StimArtefactBinViewer(EphysBinViewer):
         first_attach = viewer is not prev
         if first_attach or viewer.csv_path is None:
             viewer.attach_events(self.events, self.csv_path, self)
+            # Wire the viewer's jump-request signal once per viewer so the
+            # event-navigation buttons can ask us to reload around a given
+            # time without holding a direct ``_bin_viewer`` reference.
+            if not getattr(viewer, "_jump_signal_wired", False):
+                viewer.sigJumpToTimeRequested.connect(
+                    self.jump_to_time, QtCore.Qt.QueuedConnection
+                )
+                viewer._jump_signal_wired = True
             # Keep our local handle pointing at the viewer's authoritative
             # frame so external callers don't see a stale copy.
             self.events = viewer.events
@@ -1276,6 +1449,9 @@ class StimArtefactBinViewer(EphysBinViewer):
         # toggle is on so it tracks the new chunk window.
         if getattr(viewer, "_overlay_enabled", False):
             self.load_overlay_for_current_chunk()
+
+        if prev_display_mode == DISPLAY_MODE_WIGGLE:
+            viewer.set_display_mode(DISPLAY_MODE_WIGGLE)
 
         if prev_range is None:
             return
@@ -1294,7 +1470,14 @@ class StimArtefactBinViewer(EphysBinViewer):
             new_x0 = max(xmin, min(new_x0, xmax - width))
             new_x1 = new_x0 + width
         viewer.viewBox_seismic.setXRange(new_x0, new_x1, padding=0)
-        viewer.viewBox_seismic.setYRange(yr_prev[0], yr_prev[1], padding=0)
+        # Density mode has a stable channel-slot y-axis, so restoring the
+        # previous y-range is safe. Wiggle mode, however, recomputes its
+        # vertical layout from the signal amplitude / auto-spacing on every
+        # reload; forcing the stale y-range from the previous chunk back in
+        # immediately has been observed to destabilize the next-region path.
+        # Let the wiggle controller own its y-range after a reload.
+        if getattr(viewer, "_display_mode", None) != DISPLAY_MODE_WIGGLE:
+            viewer.viewBox_seismic.setYRange(yr_prev[0], yr_prev[1], padding=0)
         viewer.refresh_regions()
 
 

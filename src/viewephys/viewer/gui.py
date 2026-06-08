@@ -167,9 +167,7 @@ class EasyQC(QtWidgets.QMainWindow):
         # Dim horizontal guide line at every wiggle baseline. Useful for
         # visually verifying that trace offsets are evenly spaced.
         self.plotDataItem_wiggle_baselines = pg.PlotDataItem(visible=False)
-        self.plotDataItem_wiggle_baselines.setPen(
-            pg.mkPen(0, 0, 0, 40, width=1)
-        )
+        self.plotDataItem_wiggle_baselines.setPen(pg.mkPen(0, 0, 0, 40, width=1))
         self.plotItem_seismic.addItem(self.plotDataItem_wiggle_baselines)
         self.viewBox_seismic = self.plotItem_seismic.getPlotItem().getViewBox()
         self._init_menu()
@@ -225,12 +223,31 @@ class EasyQC(QtWidgets.QMainWindow):
         self.checkBox_wiggle_autospace.toggled.connect(
             lambda _checked: self.ctrl.set_model(reset_viewbox=False)
         )
+        self._set_trace_header_widgets_visible(True)
 
     def _init_menu(self):
+        self.actionToggleTraceHeaders = QtWidgets.QAction(
+            "Show Trace Headers", self.menuView
+        )
+        self.actionToggleTraceHeaders.setCheckable(True)
+        self.actionToggleTraceHeaders.setChecked(True)
+        self.actionToggleTraceHeaders.toggled.connect(
+            self._set_trace_header_widgets_visible
+        )
+        self.menuView.insertAction(
+            self.menuColormaps.menuAction(), self.actionToggleTraceHeaders
+        )
+        self.menuView.insertSeparator(self.menuColormaps.menuAction())
         self.actionColormap_CET_D6.triggered.connect(lambda: self.setColorMap("CET-D6"))
         self.actionColormap_CET_D1.triggered.connect(lambda: self.setColorMap("CET-D1"))
         self.actionColormap_CET_L2.triggered.connect(lambda: self.setColorMap("CET-L2"))
         self.actionColormap_MPL_PuOr.triggered.connect(lambda: self.setColorMap("PuOr"))
+
+    def _set_trace_header_widgets_visible(self, visible: bool) -> None:
+        """Show or hide the trace-header widgets around the main plot."""
+        self.frame_header_h.setVisible(visible)
+        self.plotItem_header_h.setVisible(visible)
+        self.plotItem_header_v.setVisible(visible)
 
     def _init_cmenu(self):
         self.viewBox_seismic.scene().contextMenu = None
@@ -715,10 +732,7 @@ class ControllerWiggle(Controller):
                 ptp_per = np.where(ptp_per > 0, ptp_per, 1.0)
                 data = data / ptp_per * (spacing * 0.9 * gain_div)
             wiggle_y = np.r_[data, np.full((1, ntr), np.nan)]
-            wiggle_y = (
-                wiggle_y / gain_div
-                + (np.arange(ntr) * spacing)[np.newaxis, :]
-            )
+            wiggle_y = wiggle_y / gain_div + (np.arange(ntr) * spacing)[np.newaxis, :]
             self.view.plotDataItem_wiggle.setData(
                 x=np.tile(np.r_[self.tscale, np.nan], ntr),
                 y=wiggle_y.T.flatten(),

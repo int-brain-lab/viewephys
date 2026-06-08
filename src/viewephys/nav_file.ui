@@ -184,6 +184,32 @@
         </widget>
        </item>
        <item>
+        <widget class="QLabel" name="label_window">
+         <property name="text">
+          <string>Window:</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLineEdit" name="lineEdit_window">
+         <property name="enabled">
+          <bool>true</bool>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>120</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="placeholderText">
+          <string>seconds</string>
+         </property>
+         <property name="toolTip">
+          <string>Display window length in seconds.</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <spacer name="horizontalSpacer_jumpTime">
          <property name="orientation">
           <enum>Qt::Horizontal</enum>
