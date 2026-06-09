@@ -166,15 +166,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         The slider thumb is moved to the nearest chunk for visual feedback only.
         """
         text = self.lineEdit_jumpTime.text().strip()
-        if not hasattr(self, "sr"):
-            return
-        if text == "":
-            self._update_time_label()
+        if text == "" or not hasattr(self, "sr"):
             return
         try:
             t = float(text)
         except ValueError:
-            self._update_time_label()
             return
         requested_sample = int(round(t * self.sr.fs))
         requested_sample = max(0, min(requested_sample, int(self.sr.ns) - 1))
