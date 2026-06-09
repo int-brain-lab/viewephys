@@ -151,7 +151,6 @@ def jump_window(qtbot, monkeypatch):
     window.horizontalSlider.setMaximum(slider_max)
     window.horizontalSlider.setEnabled(True)
     window.lineEdit_jumpTime.setEnabled(True)
-    window.pushButton_jumpTime.setEnabled(True)
     monkeypatch.setattr(
         window, "on_horizontalSliderReleased", lambda center_time=None: None
     )
@@ -186,7 +185,7 @@ def test_jump_to_time_loads_exact_sample(jump_window, qtbot, typed_seconds):
 
     assert window._first_sample == expected_first
     assert window.horizontalSlider.value() == expected_slider
-    assert window.label_sval.text() == f"{expected_t:0.6f}s"
+    assert window.lineEdit_jumpTime.text() == f"{expected_t:0.6f}"
 
 
 def test_jump_to_time_non_chunk_aligned(jump_window, qtbot):
@@ -199,7 +198,7 @@ def test_jump_to_time_non_chunk_aligned(jump_window, qtbot):
     assert window._first_sample + NSAMP_CHUNK // 2 == requested_sample
     assert window._first_sample == 14_999_500
     assert window.horizontalSlider.value() == 1500
-    assert window.label_sval.text() == "499.983333s"
+    assert window.lineEdit_jumpTime.text() == "499.983333"
 
 
 def test_slider_drag_resets_first_sample_to_chunk(jump_window, qtbot):
@@ -213,7 +212,9 @@ def test_slider_drag_resets_first_sample_to_chunk(jump_window, qtbot):
 
     window.horizontalSlider.setValue(1501)
     assert window._first_sample == 1501 * NSAMP_CHUNK
-    assert window.label_sval.text() == f"{1501 * NSAMP_CHUNK / window.sr.fs:0.6f}s"
+    assert window.lineEdit_jumpTime.text() == (
+        f"{1501 * NSAMP_CHUNK / window.sr.fs:0.6f}"
+    )
 
 
 def test_jump_to_time_clamps_out_of_range(jump_window, qtbot):
