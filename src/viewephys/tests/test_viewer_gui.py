@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from qtpy import QtCore, QtWidgets
 
-from viewephys.gui import NSAMP_CHUNK, EphysBinViewer, create_app, viewephys
+from viewephys.gui import EphysBinViewer, create_app, viewephys
 from viewephys.tests.test_viewer_helpers import synthetic_seismic_data
 from viewephys.viewer.gui import EasyQC, viewseis
 
@@ -133,12 +133,12 @@ class _FakeViewer:
         return None
 
 
-def _centered_first_sample(typed_seconds, fs, ns):
+def _centered_first_sample(typed_seconds, fs, ns, window_length_n):
     """Return the expected first sample after centering a jump request."""
     requested_sample = int(round(typed_seconds * fs))
     requested_sample = max(0, min(requested_sample, int(ns) - 1))
-    max_first = max(0, int(ns) - NSAMP_CHUNK)
-    first_sample = requested_sample - NSAMP_CHUNK // 2
+    max_first = max(0, int(ns) - window_length_n)
+    first_sample = requested_sample - window_length_n // 2
     return max(0, min(first_sample, max_first))
 
 
@@ -147,7 +147,7 @@ def jump_window(qtbot, monkeypatch):
     window = EphysBinViewer()
     qtbot.addWidget(window)
     window.sr = _FakeSR()
-    slider_max = int(np.floor(window.sr.ns / NSAMP_CHUNK))
+    slider_max = int(np.floor(window.sr.ns / window.window_length_n))
     window.horizontalSlider.setMaximum(slider_max)
     window.horizontalSlider.setEnabled(True)
     window.lineEdit_jumpTime.setEnabled(True)
@@ -171,11 +171,14 @@ def test_jump_to_time_loads_exact_sample(jump_window, qtbot, typed_seconds):
     parking the slider near the loaded window for visual feedback only."""
     window = jump_window
     fs = window.sr.fs
-    expected_first = _centered_first_sample(typed_seconds, fs, window.sr.ns)
+    expected_first = _centered_first_sample(
+        typed_seconds, fs, window.sr.ns, window.window_length_n
+    )
     expected_slider = max(
         0,
         min(
-            int(round(expected_first / NSAMP_CHUNK)), window.horizontalSlider.maximum()
+            int(round(expected_first / window.window_length_n)),
+            window.horizontalSlider.maximum(),
         ),
     )
     expected_t = expected_first / fs
@@ -195,7 +198,7 @@ def test_jump_to_time_non_chunk_aligned(jump_window, qtbot):
     window.on_jumpToTimeRequested()
 
     requested_sample = int(round(500.150 * window.sr.fs))
-    assert window._first_sample + NSAMP_CHUNK // 2 == requested_sample
+    assert window._first_sample + window.window_length_n // 2 == requested_sample
     assert window._first_sample == 14_999_500
     assert window.horizontalSlider.value() == 1500
     assert window.lineEdit_jumpTime.text() == "499.983333"
@@ -211,17 +214,21 @@ def test_slider_drag_resets_first_sample_to_chunk(jump_window, qtbot):
     assert window._first_sample == 14_999_500  # not chunk-aligned
 
     window.horizontalSlider.setValue(1501)
-    assert window._first_sample == 1501 * NSAMP_CHUNK
+    assert window._first_sample == 1501 * window.window_length_n
     assert window.lineEdit_jumpTime.text() == (
-        f"{1501 * NSAMP_CHUNK / window.sr.fs:0.6f}"
+        f"{1501 * window.window_length_n / window.sr.fs:0.6f}"
     )
 
 
 def test_jump_to_time_clamps_out_of_range(jump_window, qtbot):
     window = jump_window
-    max_first = max(0, int(window.sr.ns) - NSAMP_CHUNK)
+    max_first = max(0, int(window.sr.ns) - window.window_length_n)
     expected_slider_high = max(
-        0, min(int(round(max_first / NSAMP_CHUNK)), window.horizontalSlider.maximum())
+        0,
+        min(
+            int(round(max_first / window.window_length_n)),
+            window.horizontalSlider.maximum(),
+        ),
     )
 
     window.lineEdit_jumpTime.setText("-50")
@@ -252,7 +259,9 @@ def test_jump_to_time_recenters_existing_zoom(qtbot, monkeypatch):
     window = EphysBinViewer()
     qtbot.addWidget(window)
     window.sr = _FakeArraySR()
-    window.horizontalSlider.setMaximum(int(np.floor(window.sr.ns / NSAMP_CHUNK)))
+    window.horizontalSlider.setMaximum(
+        int(np.floor(window.sr.ns / window.window_length_n))
+    )
     for checkbox in window.cbs.values():
         checkbox.setChecked(False)
     window.cbs["raw"].setChecked(True)
