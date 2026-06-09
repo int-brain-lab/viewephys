@@ -172,49 +172,16 @@ class SpikeGLXDataModel(AbstractDataModel):
         """ADC saturation level in µV."""
         return self.sr.range_volts[0] * 1e6
 
+# TODO: check for probegroup, not sure we can support at this stage
 
 class SpikeInterfaceDataModel(AbstractDataModel):
     def __init__(self, recordings_dict):
         self.recordings_dict = recordings_dict
 
         self.first_recording = recordings_dict[(next(iter(recordings_dict)))]
+        self.first_key = list(recordings_dict.keys())[0]
 
-        # Perform checks that all recordings are comparable and supported.
-        for rec in recordings_dict.values():
-            if rec.get_num_segments() != 1:
-                raise ValueError(
-                    "Currently `viewephys` only supports 1 segment recordings."
-                )
-
-            if not rec.has_probe():
-                raise ValueError("All passed recordings must have a probe attached.")
-
-            # TODO: check for probegroup, not sure we can support at this stage
-
-        first_contact_positions = self.first_recording.get_probe().contact_positions
-        first_sampling_frequency = self.first_recording.get_sampling_frequency()
-        first_num_samples = self.first_recording.get_num_samples(segment_index=0)
-        first_gains = self.first_recording.get_channel_gains()
-        first_offsets = self.first_recording.get_channel_offsets()
-
-        if np.unique(first_gains).size != 1:
-            raise ValueError(
-                "All channels in the first recording must share the same gain."
-            )
-        if np.unique(first_offsets).size != 1:
-            raise ValueError(
-                "All channels in the first recording must share the same offset."
-            )
-
-        for key in list(self.recordings_dict.keys())[1:]:
-            rec = self.recordings_dict[key]
-            assert rec.get_sampling_frequency() == first_sampling_frequency
-            assert rec.get_num_samples(segment_index=0) == first_num_samples
-            assert np.array_equal(rec.get_channel_gains(), first_gains)
-            assert np.array_equal(rec.get_channel_offsets(), first_offsets)
-            assert np.array_equal(
-                rec.get_probe().contact_positions, first_contact_positions
-            )
+        self.perform_checks_on_recordings()
 
     @override
     def get_data(
@@ -248,6 +215,30 @@ class SpikeInterfaceDataModel(AbstractDataModel):
 
     @override
     def get_header(self) -> dict:
+
+        # Handle the case where no channel locations can be found
+        try:
+            self.first_recording.get_channel_locations()
+        except Exception:
+            geom = {"trace": np.arange(num_channels)}
+            return geom
+
+        # Handle the second case, where channel locations are found
+        # but the recording does not have a probe attached
+        if not self.first_recording.has_probe():
+            positions = (
+                self.first_recording.get_channel_locations()
+            )  # (n_contacts, 2) in µm
+
+            geom = {
+                "trace": np.arange(num_channels),
+                "x": positions[:, 0],
+                "y": positions[:, 1],
+            }
+            return geom
+
+        # Finally, the best case where a full probe is attached and we
+        # can add shank and row/col information.
         probe = self.first_recording.get_probe()
         positions = probe.contact_positions  # (n_contacts, 2) in µm
         num_channels = self.first_recording.get_num_channels()
@@ -302,10 +293,13 @@ class SpikeInterfaceDataModel(AbstractDataModel):
 
     @override
     def get_probe_information(self) -> str | None:
-        probe = self.first_recording.get_probe()
-        a = probe.annotations
-        parts = [a.get("manufacturer"), a.get("model_name"), a.get("serial_number")]
-        return ", ".join(p for p in parts if p) or None
+        if self.first_recording.has_probe():
+            probe = self.first_recording.get_probe()
+            a = probe.annotations
+            parts = [a.get("manufacturer"), a.get("model_name"), a.get("serial_number")]
+            return ", ".join(p for p in parts if p) or None
+        else:
+            return None
 
     @override
     def get_num_channels(self) -> int:
@@ -316,3 +310,117 @@ class SpikeInterfaceDataModel(AbstractDataModel):
         # ADC saturation range is hardware-specific and not available through
         # the SpikeInterface API.
         return None
+
+    def perform_checks_on_recordings(self):
+        """
+
+        """
+        try:
+            self.first_recording.get_channel_locations()
+            first_has_locations = True
+        except Exception:
+            first_has_locations = False
+
+        has_probe = self.first_recording.has_probe()
+
+        # Perform checks that all recordings are comparable and supported.
+        for key, rec in recordings_dict.items():
+
+            if rec.get_num_segments() != 1:
+                raise ValueError(
+                    f"Currently `viewephys` only supports 1 segment recordings. {key} has more than one."
+                )
+
+            try:
+                rec.get_channel_locations()
+                rec_has_locations = True
+            except Exception:
+                rec_has_locations = False
+
+            if rec_has_locations and not first_has_locations:
+                raise ValueError(
+                    f"The first recording does not have contact locations, "
+                    f"but other recordings (e.g. {key}) do."
+                )
+            if first_has_locations and not rec_has_locations:
+                warnings.warn(f"The first recording {self.first_key} has contact locations, but {key} does not.")
+
+            if rec.has_probe() and not has_probe:
+                raise ValueError(
+                    f"The first recording {self.first_key} does not have a probe attached, "
+                    f"but other recordings (e.g. {key}) do."
+                )
+
+            if has_probe and not rec.has_probe():
+                raise ValueError(f"The first recording {self.first_key} has a probe attached, but {key} does not")
+
+        first_sampling_frequency = self.first_recording.get_sampling_frequency()
+        first_num_samples = self.first_recording.get_num_samples(segment_index=0)
+        first_gains = self.first_recording.get_channel_gains()
+        first_offsets = self.first_recording.get_channel_offsets()
+
+        if np.unique(first_gains).size != 1:
+            raise ValueError(
+                f"All channels in the first recording {self.first_key} must share the same gain."
+            )
+        if np.unique(first_offsets).size != 1:
+            raise ValueError(
+                f"All channels in the first recording {self.first_key} must share the same offset."
+            )
+
+        for key in list(self.recordings_dict.keys())[1:]:
+            rec = self.recordings_dict[key]
+
+            if rec.get_sampling_frequency() != first_sampling_frequency:
+                raise ValueError(
+                    f"The sampling frequency for recording {key} "
+                    f"({rec.get_sampling_frequency()} Hz) does not match the first recording "
+                    f"{self.first_key} ({first_sampling_frequency} Hz)."
+                )
+
+            if rec.get_num_samples(segment_index=0) != first_num_samples:
+                raise ValueError(
+                    f"The number of samples for recording {key} "
+                    f"({rec.get_num_samples(segment_index=0)}) does not match the first recording "
+                    f"{self.first_key} ({first_num_samples})."
+                )
+
+            if not np.array_equal(rec.get_channel_gains(), first_gains):
+                raise ValueError(
+                    f"The channel gains for recording {key} do not match the first recording "
+                    f"{self.first_key}."
+                )
+
+            if not np.array_equal(rec.get_channel_offsets(), first_offsets):
+                raise ValueError(
+                    f"The channel offsets for recording {key} do not match the first recording "
+                    f"{self.first_key}."
+                )
+
+            if first_has_locations:
+                try:
+                    rec_locs = rec.get_channel_locations()
+                except Exception:
+                    rec_locs = None
+                if rec_locs is not None:
+                    if not np.array_equal(
+                            self.first_recording.get_channel_locations(),
+                            rec.get_channel_locations()
+                        ):
+                        raise ValueError(f"The channel locations for the first recording and"
+                                         f"{key} do not match.")
+
+            if has_probe:
+                if rec.has_probe():
+                    rec_probe = rec.get_probe()
+                    first_probe = self.first_recording.get_probe()
+                    if not np.array_equal(rec_probe.contact_locations, first_probe.contact_locations):
+                        raise ValueError(
+                            f"The contact locations on the probe do not match "
+                            f"between recordings {self.first_key} and {key}"
+                        )
+                    if not np.array_equal(rec_probe.shank_ids, first_probe.shank_ids):
+                        raise ValueError(
+                            f"The shank IDs on the probe do not "
+                            f"match between recordings {self.first_key} and {key}"
+                        )
