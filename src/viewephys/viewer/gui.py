@@ -668,11 +668,15 @@ class ControllerImage(Controller):
         if self.model.taxis == 0:
             xlim, ylim = (tlim, clim)
             transform = [si, 0.0, 0.0, 0.0, 1, 0.0, t0 - si / 2, x0 - 0.5, 1.0]
-            self.view.imageItem_seismic.setImage(self.model.data[:, self.trace_indices])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[:, self.trace_indices], autoLevels=False
+            )
         elif self.model.taxis == 1:
             xlim, ylim = (clim, tlim)
             transform = [1.0, 0.0, 0.0, 0.0, si, 0.0, x0 - 0.5, t0 - si / 2, 1.0]
-            self.view.imageItem_seismic.setImage(self.model.data[self.trace_indices, :])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[self.trace_indices, :], autoLevels=False
+            )
             self.view.plotItem_seismic.invertY()
         else:
             raise ValueError("taxis must be 0 (horizontal axis) or 1 (vertical axis)")
@@ -690,9 +694,13 @@ class ControllerImage(Controller):
 
     def redraw(self):
         if self.model.taxis == 1:
-            self.view.imageItem_seismic.setImage(self.model.data[self.trace_indices, :])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[self.trace_indices, :], autoLevels=False
+            )
         elif self.model.taxis == 0:
-            self.view.imageItem_seismic.setImage(self.model.data[:, self.trace_indices])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[:, self.trace_indices], autoLevels=False
+            )
         self.set_header()
         self.set_gain()
 
