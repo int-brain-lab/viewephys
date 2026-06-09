@@ -178,11 +178,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.lineEdit_windowSize.setText(f"{self.window_length_n / self.sr.fs:0.2f}")
 
     def update_slider_limits(self) -> None:
-        max_first = max(0, int(self.sr.ns) - self.window_length_n)
         self.horizontalSlider.setMaximum(
-            int(np.floor(max_first / self.window_length_n))
+            int(np.floor(self.sr.ns / self.window_length_n))
         )
-        self.label_smax.setText(f"{self.sr.ns / self.sr.fs:0.2f}s")
+        tmax = (
+            np.floor(self.sr.ns / self.window_length_n)
+            * self.window_length_n
+            / self.sr.fs
+        )
+        self.label_smax.setText(f"{tmax:0.2f}s")
 
     def _update_time_label(self) -> None:
         if not hasattr(self, "sr"):
