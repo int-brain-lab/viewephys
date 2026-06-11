@@ -76,7 +76,8 @@ class SpikeGLXDataModel(AbstractDataModel):
             ``"butterworth"``, or ``"broadband"``.
         raw
             Option to pass the raw data. This can be used when calling this many times
-            and do not want to repeatedly slice the raw data.
+            and do not want to repeatedly slice the raw data. Note `start_sample` and
+            `end_sample` are unused when `raw` is not `None`.
 
         Returns
         -------
