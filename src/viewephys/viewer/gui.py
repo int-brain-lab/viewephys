@@ -143,6 +143,7 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
         self.layers = {}
         self.model = Model(None, None)
         self._display_mode = DISPLAY_MODE_DENSITY
+        self._auto_space_wiggle = self.checkbox_auto_space_wiggle.isChecked()
         self._ctrl_image = ControllerImage(self)
         self._ctrl_wiggle = ControllerWiggle(self)
         icon_path = Path(__file__).resolve().parent.parent.joinpath("viewephys.svg")
@@ -153,7 +154,7 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
         self.plotItem_seismic.setBackground(background_color)
         self.plotItem_seismic.addItem(self.imageItem_seismic)
         self.plotDataItem_wiggle = pg.PlotDataItem(visible=False)
-        self.plotDataItem_wiggle.setPen(pg.mkPen("#ebc000"))
+        self.plotDataItem_wiggle.setPen(pg.mkPen("#000000", width=0.9))
         self.plotItem_seismic.addItem(self.plotDataItem_wiggle)
         self.viewBox_seismic = self.plotItem_seismic.getPlotItem().getViewBox()
         self._init_menu()
@@ -202,6 +203,14 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
         self.radio_wiggle.toggled.connect(
             lambda checked: checked and self.set_display_mode(DISPLAY_MODE_WIGGLE)
         )
+        self.checkbox_auto_space_wiggle.clicked.connect(
+            self.on_checkbox_auto_space_wiggle
+        )
+
+    def on_checkbox_auto_space_wiggle(self, value: bool) -> None:
+        """"""
+        self._auto_space_wiggle = value
+        self.ctrl.set_model(reset_viewbox=False)
 
     def _init_menu(self):
         self.actionColormap_CET_D6.triggered.connect(lambda: self.setColorMap("CET-D6"))
@@ -420,12 +429,18 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
             self.imageItem_seismic.setVisible(True)
             self.plotDataItem_wiggle.setVisible(False)
             self.plotDataItem_wiggle.clear()
-            self.plotItem_seismic.setBackground("#000000")
+            self.plotItem_seismic.setBackground(
+                self.palette().color(self.backgroundRole())
+            )
+            self.checkbox_auto_space_wiggle.setEnabled(False)
         elif mode == DISPLAY_MODE_WIGGLE:
             self.imageItem_seismic.clear()
             self.imageItem_seismic.setVisible(False)
             self.plotDataItem_wiggle.setVisible(True)
-            self.plotItem_seismic.setBackground("#193600")
+            self.plotItem_seismic.getPlotItem().getViewBox().setBackgroundColor(
+                "#ffffff"
+            )
+            self.checkbox_auto_space_wiggle.setEnabled(True)
         self.ctrl.set_model(reset_viewbox=False)
 
 
@@ -651,10 +666,14 @@ class ControllerWiggle(Controller):
         if self.model.taxis == 0:
             xlim, ylim = (tlim, clim)
             wiggle_y = np.r_[self.model.data, np.ones(self.model.ntr)[np.newaxis, :]]
-            wiggle_y = (
-                wiggle_y / (10 ** (self.gain / 20))
-                + np.arange(self.model.ntr)[np.newaxis, :]
-            )
+            wiggle_y = wiggle_y / (10 ** (self.gain / 20))
+            if self.view._auto_space_wiggle:
+                max_width = np.max(np.max(wiggle_y, axis=0) - np.min(wiggle_y, axis=0))
+                wiggle_y += (np.arange(self.model.ntr) * max_width)[np.newaxis, :]
+                wiggle_y /= max_width
+            else:
+                wiggle_y += np.arange(self.model.ntr)[np.newaxis, :]
+
             self.view.plotDataItem_wiggle.setData(
                 x=np.tile(np.r_[self.tscale, np.nan], self.model.ntr),
                 y=wiggle_y.T.flatten(),
@@ -663,7 +682,7 @@ class ControllerWiggle(Controller):
             xlim, ylim = (clim, tlim)
         else:
             raise ValueError("taxis must be 0 (horizontal axis) or 1 (vertical axis)")
-        if tlim is not None and clim is not None:
+        if tlim is not None and clim is not None:  # TOASK: what case is this?
             self.view.plotItem_header_h.setLimits(xMin=xlim[0], xMax=xlim[1])
             self.view.plotItem_header_v.setLimits(yMin=ylim[0], yMax=ylim[1])
             self.view.plotItem_seismic.setLimits(
