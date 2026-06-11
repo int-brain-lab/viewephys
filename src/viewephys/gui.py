@@ -76,8 +76,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         validator.setLocale(QtCore.QLocale.c())
         self.lineEdit_jumpTime.setValidator(validator)
         self.lineEdit_jumpTime.returnPressed.connect(self.on_jumpToTimeRequested)
-        self.pushButton_jumpTime.clicked.connect(self.on_jumpToTimeRequested)
         self.label_smin.setText("0")
+        self._update_time_label()
         self.show()
 
         self.viewers: dict[str, EphysViewer | None]
@@ -146,7 +146,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self._first_sample = 0
         self.horizontalSlider.setEnabled(True)
         self.lineEdit_jumpTime.setEnabled(True)
-        self.pushButton_jumpTime.setEnabled(True)
+        self._update_time_label()
         self.on_horizontalSliderReleased()
 
     def on_horizontalSliderValueChanged(self) -> None:
@@ -154,8 +154,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self._update_time_label()
 
     def _update_time_label(self) -> None:
+        if not hasattr(self, "sr"):
+            self.lineEdit_jumpTime.setText("0.000000")
+            return
         tcur = self._first_sample / self.sr.fs
-        self.label_sval.setText(f"{tcur:0.6f}s")
+        self.lineEdit_jumpTime.setText(f"{tcur:0.6f}")
 
     def on_jumpToTimeRequested(self) -> None:
         """Jump to the user-typed time, centering the loaded window on it.
