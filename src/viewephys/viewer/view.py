@@ -131,6 +131,10 @@ class Ui_MainWindow:
         self.radio_density.setObjectName("radio_density")
         self.radio_wiggle = QtWidgets.QRadioButton("Wiggle", self.widget_display_mode)
         self.radio_wiggle.setObjectName("radio_wiggle")
+        self.checkBox_wiggle_autospace = QtWidgets.QCheckBox(
+            "Auto-space", self.widget_display_mode
+        )
+        self.checkBox_wiggle_autospace.setObjectName("checkBox_wiggle_autospace")
         self.radio_density.setChecked(True)
         self.displayModeGroup = QtWidgets.QButtonGroup(self.frame_seismic)
         self.displayModeGroup.setExclusive(True)
@@ -138,6 +142,7 @@ class Ui_MainWindow:
         self.displayModeGroup.addButton(self.radio_wiggle)
         self.vbox_display_mode.addWidget(self.radio_density)
         self.vbox_display_mode.addWidget(self.radio_wiggle)
+        self.vbox_display_mode.addWidget(self.checkBox_wiggle_autospace)
         self.gridLayout_2.addWidget(self.widget_display_mode, 3, 0, 1, 2)
         spacer_item_3 = QtWidgets.QSpacerItem(
             20, 40, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding
