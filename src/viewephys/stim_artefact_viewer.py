@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 from neuropixel import trace_header
@@ -11,9 +11,9 @@ from qtpy import QtCore, QtGui, QtWidgets
 from viewephys.gui import A_SCALAR, T_SCALAR, EphysViewer, create_app
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import matplotlib
-    import numpy as np
-    import pyqtgraph as pg
 
 
 class StimArtefactViewer(EphysViewer):
@@ -29,10 +29,21 @@ class StimArtefactViewer(EphysViewer):
 
         # do some validation
         self.events_path = events_path
-        self.events = pd.read_csv(self.events_path)
-
+        self.events = self._load_events(self.events_path)
         self._populate_region_select()
-        print("CALLED")
+
+    @staticmethod
+    def _load_events(events_path: str | Path) -> pd.DataFrame:
+        events = pd.read_csv(events_path)
+        if "stop_sample" not in events.columns and "end_sample" in events.columns:
+            events = events.rename(columns={"end_sample": "stop_sample"})
+        missing = {"start_sample", "stop_sample"} - set(events.columns)
+        if missing:
+            raise ValueError(
+                f"Events CSV must contain start_sample and stop_sample columns; "
+                f"missing {sorted(missing)}. Found {list(events.columns)}."
+            )
+        return events
 
     # can centralise this somwehow?
     @staticmethod
@@ -61,7 +72,7 @@ class StimArtefactViewer(EphysViewer):
         try:
             self.comboBox_stim_event_index.addItems(
                 [
-                    f"{i} ({float(row.start):.6f}, {float(row.stop):.6f})"
+                    f"{i} ({int(row.start_sample)}, {int(row.stop_sample)})"
                     for i, row in self.events.iterrows()
                 ]
             )
@@ -93,16 +104,21 @@ class StimArtefactViewer(EphysViewer):
         view_start = float(self.model.t0)
         view_stop = float(self.model.t0 + self.model.ns * self.model.si)
 
-        visible = self.events[
-            (self.events["start"] >= view_start) & (self.events["stop"] <= view_stop)
-        ]
+        # The events file stores stim samples; convert to seconds for the time axis.
+        si = float(self.model.si)
+        start_s = self.events["start_sample"] * si
+        stop_s = self.events["stop_sample"] * si
+        visible = self.events[(start_s >= view_start) & (stop_s <= view_stop)]
 
         if visible.empty:
             return
 
         for event_idx, event in visible.iterrows():
             region = pg.LinearRegionItem(
-                values=(float(event["start"]), float(event["stop"])),
+                values=(
+                    float(event["start_sample"]) * si,
+                    float(event["stop_sample"]) * si,
+                ),
                 orientation="vertical",
                 movable=False,
             )
@@ -118,12 +134,12 @@ class StimArtefactViewer(EphysViewer):
 
     def move_to_region(self, new_region_idx: int) -> None:
 
-        print("selected", self.selected_event_idx)
-        print("new", new_region_idx)
-
         if new_region_idx not in self._visible_event_indices:
             event = self.events.loc[new_region_idx]
-            midpoint = (float(event["start"]) + float(event["stop"])) / 2
+            si = float(self.model.si)
+            midpoint = (
+                float(event["start_sample"]) + float(event["stop_sample"])
+            ) / 2 * si
 
             self._set_event_combo_index(new_region_idx)
             self.selected_event_idx = new_region_idx
@@ -179,6 +195,62 @@ class StimArtefactViewer(EphysViewer):
         self._regions_hidden = bool(checked)
         for region in self._event_regions:
             region.setVisible(not self._regions_hidden)
+
+    def set_trace_header(self, trace_header: dict) -> None:
+        assert "ids" in trace_header
+        self._populate_channel_list(trace_header["ids"])
+
+    def _populate_channel_list(self, ids) -> None:
+        self.listWidget_stim_channels.clear()
+        # Display channels top-to-bottom in the same order they are plotted
+        # (the seismic view draws increasing trace indices going up).
+        for trace_idx, channel_id in reversed(list(enumerate(ids))):
+            item = QtWidgets.QListWidgetItem(str(channel_id))
+            item.setData(QtCore.Qt.UserRole, trace_idx)
+            self.listWidget_stim_channels.addItem(item)
+        self._update_channel_count_label()
+
+    def _update_channel_count_label(self) -> None:
+        total = self.listWidget_stim_channels.count()
+        chosen = len(self.listWidget_stim_channels.selectedItems())
+        self.label_stim_channel_count.setText(f"{chosen} / {total} channels")
+
+    def _on_channels_all(self) -> None:
+        self.listWidget_stim_channels.selectAll()
+        self._update_channel_count_label()
+
+    def _on_channels_none(self) -> None:
+        self.listWidget_stim_channels.clearSelection()
+        self._update_channel_count_label()
+
+    def _on_channels_apply(self) -> None:
+        items = self.listWidget_stim_channels.selectedItems()
+        total = self.listWidget_stim_channels.count()
+        if not items or len(items) == total:
+            trace_indices = np.arange(self.model.ntr)
+            self.listWidget_stim_channels.selectAll()
+        else:
+            trace_indices = np.sort(
+                np.array(
+                    [int(item.data(QtCore.Qt.UserRole)) for item in items], dtype=int
+                )
+            )
+
+        for ctrl in (self._ctrl_image, self._ctrl_wiggle):
+            ctrl.trace_indices = trace_indices
+        # Reset the view bounds so they match the filtered number of traces.
+        t0, si, ns = self.model.t0, self.model.si, self.model.ns
+        x0 = self.model.x0
+        tlim = [t0, t0 + ns * si]
+        clim = [x0 - 0.5, x0 + trace_indices.size - 0.5]
+        ctrls = [self._ctrl_image, self._ctrl_wiggle]
+        ctrls.remove(self.ctrl)
+        ctrls.append(self.ctrl)
+        for ctrl in ctrls:
+            ctrl._update_plotItem(tlim=tlim, clim=clim)
+            ctrl.set_header()
+            ctrl.set_gain()
+        self._update_channel_count_label()
 
     def extend_gui(self) -> None:
         # Bottom container.
@@ -389,14 +461,17 @@ class StimArtefactViewer(EphysViewer):
         btn_layout.setSpacing(4)
         self.pushButton_stim_channels_all = QtWidgets.QPushButton("All", btn_widget)
         self.pushButton_stim_channels_all.setObjectName("pushButton_stim_channels_all")
+        self.pushButton_stim_channels_all.clicked.connect(self._on_channels_all)
         self.pushButton_stim_channels_none = QtWidgets.QPushButton("None", btn_widget)
         self.pushButton_stim_channels_none.setObjectName(
             "pushButton_stim_channels_none"
         )
+        self.pushButton_stim_channels_none.clicked.connect(self._on_channels_none)
         self.pushButton_stim_channels_apply = QtWidgets.QPushButton("Apply", btn_widget)
         self.pushButton_stim_channels_apply.setObjectName(
             "pushButton_stim_channels_apply"
         )
+        self.pushButton_stim_channels_apply.clicked.connect(self._on_channels_apply)
         btn_layout.addWidget(self.pushButton_stim_channels_all)
         btn_layout.addWidget(self.pushButton_stim_channels_none)
         btn_layout.addWidget(self.pushButton_stim_channels_apply)
@@ -440,10 +515,12 @@ def stim_artefact_viewer(
 
     if channels is None:
         channels = trace_header(version=1)
+    assert "ids" in channels
 
     if data is not None:
         ev.model.set_data(data.T * a_scalar, si=1 / fs, header=channels, t0=t0, taxis=0)
         ev.ctrl.set_model()
+        ev.set_trace_header(channels)
         ev.plot_events_as_regions()  # TODO: centralise
 
     ev.show()

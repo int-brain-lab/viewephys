@@ -223,7 +223,10 @@ class SpikeInterfaceDataModel(AbstractDataModel):
         try:
             self.first_recording.get_channel_locations()
         except Exception:
-            geom = {"trace": np.arange(num_channels)}
+            geom = {
+                "trace": np.arange(num_channels),
+                "ids": self.first_recording.get_channel_ids()  # TODO: do not show this in trace dropdown
+            }
             return geom
 
         # Handle the second case, where channel locations are found
@@ -240,6 +243,7 @@ class SpikeInterfaceDataModel(AbstractDataModel):
                 "trace": np.arange(num_channels),
                 "x": positions[:, 0],
                 "y": positions[:, 1],
+                "ids": self.first_recording.get_channel_ids()  # TODO: do not show this in trace dropdown
             }
             return geom
 
@@ -264,6 +268,7 @@ class SpikeInterfaceDataModel(AbstractDataModel):
             # TODO: we have no flag yet. We can look for it on the SI recording
             "col": col,
             "row": row.astype(int),
+            "ids": self.first_recording.get_channel_ids() # TODO: do not show this in trace dropdown
         }
 
         if (

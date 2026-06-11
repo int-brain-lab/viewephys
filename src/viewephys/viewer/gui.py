@@ -665,17 +665,22 @@ class ControllerWiggle(Controller):
     def _update_plotItem(self, tlim=None, clim=None):
         if self.model.taxis == 0:
             xlim, ylim = (tlim, clim)
-            wiggle_y = np.r_[self.model.data, np.ones(self.model.ntr)[np.newaxis, :]]
+            trace_indices = self.trace_indices
+            if trace_indices is None:
+                trace_indices = np.arange(self.model.ntr)
+            data = self.model.data[:, trace_indices]
+            ntr = int(trace_indices.size)
+            wiggle_y = np.r_[data, np.ones(ntr)[np.newaxis, :]]
             wiggle_y = wiggle_y / (10 ** (self.gain / 20))
             if self.view._auto_space_wiggle:
                 max_width = np.max(np.max(wiggle_y, axis=0) - np.min(wiggle_y, axis=0))
-                wiggle_y += (np.arange(self.model.ntr) * max_width)[np.newaxis, :]
+                wiggle_y += (np.arange(ntr) * max_width)[np.newaxis, :]
                 wiggle_y /= max_width
             else:
-                wiggle_y += np.arange(self.model.ntr)[np.newaxis, :]
+                wiggle_y += np.arange(ntr)[np.newaxis, :]
 
             self.view.plotDataItem_wiggle.setData(
-                x=np.tile(np.r_[self.tscale, np.nan], self.model.ntr),
+                x=np.tile(np.r_[self.tscale, np.nan], ntr),
                 y=wiggle_y.T.flatten(),
             )
         elif self.model.taxis == 1:
