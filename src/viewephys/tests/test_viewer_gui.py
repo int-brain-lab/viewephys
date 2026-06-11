@@ -66,6 +66,40 @@ def test_toggle_density_wiggle(view_with_data, qtbot):
     assert window._display_mode == "density"
 
 
+def test_sort_reorders_plotted_image_multiple_keys(view_with_data):
+    """Sorting by multiple keys should reorder the plotted image
+    without mutating the header.
+    """
+    window = view_with_data
+    original_header = {
+        key: values.copy() for key, values in window.model.header.items()
+    }
+    keys = ["receiver_number", "receiver_line"]
+    expected_indices = np.lexsort(
+        [window.model.header["receiver_number"], window.model.header["receiver_line"]]
+    )
+    expected_image = window.model.data[expected_indices, :]
+
+    window.ctrl.sort(keys)
+
+    np.testing.assert_array_equal(window.ctrl.trace_indices, expected_indices)
+    np.testing.assert_array_equal(window.imageItem_seismic.image, expected_image)
+    for key, original_values in original_header.items():
+        np.testing.assert_array_equal(window.model.header[key], original_values)
+
+
+def test_sort_reorders_plotted_image_descending(view_with_data):
+    """Descending sort should reorder the plotted image."""
+    window = view_with_data
+    expected_indices = np.lexsort([-window.model.header["receiver_number"]])
+    expected_image = window.model.data[expected_indices, :]
+
+    window.ctrl.sort(["!receiver_number"])
+
+    np.testing.assert_array_equal(window.ctrl.trace_indices, expected_indices)
+    np.testing.assert_array_equal(window.imageItem_seismic.image, expected_image)
+
+
 class _FakeSR:
     """Minimal stand-in for spikeglx.Reader, exposing only what the jump logic reads."""
 
