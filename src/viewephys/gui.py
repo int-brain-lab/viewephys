@@ -244,30 +244,34 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
     def on_lineEdit_windowSizeChanged(self) -> None:
         text = self.lineEdit_windowSize.text().strip()
-        if text == "" or not hasattr(self, "sr"):
+        if text == "" or not hasattr(self, "data"):
             return
         try:
             t = float(text)
         except ValueError:
             return
 
-        self.window_length_n = max(1, int(round(t * self.sr.fs)))
+        self.window_length_n = max(
+            1, int(round(t * self.data.get_sampling_frequency()))
+        )
         self.update_slider_limits()
         self.update_window_lineedit()
         self.on_horizontalSliderValueChanged()
         self.on_horizontalSliderReleased()
 
     def update_window_lineedit(self) -> None:
-        self.lineEdit_windowSize.setText(f"{self.window_length_n / self.sr.fs:0.2f}")
+        self.lineEdit_windowSize.setText(
+            f"{self.window_length_n / self.data.get_sampling_frequency():0.2f}"
+        )
 
     def update_slider_limits(self) -> None:
         self.horizontalSlider.setMaximum(
-            int(np.floor(self.sr.ns / self.window_length_n))
+            int(np.floor(self.data.get_num_samples() / self.window_length_n))
         )
         tmax = (
-            np.floor(self.sr.ns / self.window_length_n)
+            np.floor(self.data.get_num_samples() / self.window_length_n)
             * self.window_length_n
-            / self.sr.fs
+            / self.data.get_sampling_frequency()
         )
         self.label_smax.setText(f"{tmax:0.2f}s")
 
@@ -715,6 +719,8 @@ def viewephys(
     if data is not None:
         ev.model.set_data(data.T * a_scalar, si=1 / fs, header=channels, t0=t0, taxis=0)
         ev.ctrl.set_model()
+        ev.plot_events_as_regions()
+
     if br is not None and "atlas_id" in channels:
         _, ir = ismember(channels["atlas_id"], br.id)
         image = br.rgb[ir].astype(np.uint8)
