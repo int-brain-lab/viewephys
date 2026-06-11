@@ -227,5 +227,5 @@ class Ui_MainWindow:
         self.checkbox_auto_space_wiggle.setToolTip(
             "Scale the spacing between wiggle traces by the "
             "widest trace so high-amplitude channels don't overlap their "
-            "neighbours."
+            "neighbours. Note gain values are no longer accurate."
         )
