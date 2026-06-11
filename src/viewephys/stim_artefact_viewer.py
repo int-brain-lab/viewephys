@@ -17,10 +17,14 @@ if TYPE_CHECKING:
 
 
 class StimArtefactViewer(EphysViewer):
+    request_jump_to_time = QtCore.Signal(float)
+
     def __init__(self, events_path: str | Path | None = None, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.extend_gui()
         self._event_regions: list[pg.LinearRegionItem] = []
+        self._visible_event_indices: list[int] = []
+        self.selected_event_idx: int | None = 0
         self._regions_hidden = False
 
         # do some validation
@@ -28,6 +32,7 @@ class StimArtefactViewer(EphysViewer):
         self.events = pd.read_csv(self.events_path)
 
         self._populate_region_select()
+        print("CALLED")
 
     # can centralise this somwehow?
     @staticmethod
@@ -51,19 +56,39 @@ class StimArtefactViewer(EphysViewer):
 
     # TODO: will need to handle the events list going empty.
     def _populate_region_select(self) -> None:
+        self.comboBox_stim_event_index.blockSignals(True)
         self.comboBox_stim_event_index.clear()
-        self.comboBox_stim_event_index.addItems(
-            [
-                f"{i} ({float(row.start):.6f}, {float(row.stop):.6f})"
-                for i, row in self.events.iterrows()
-            ]
-        )
-        self.comboBox_stim_event_index.setCurrentIndex(0)
+        try:
+            self.comboBox_stim_event_index.addItems(
+                [
+                    f"{i} ({float(row.start):.6f}, {float(row.stop):.6f})"
+                    for i, row in self.events.iterrows()
+                ]
+            )
+            self.comboBox_stim_event_index.setCurrentIndex(0)
+        finally:
+            self.comboBox_stim_event_index.blockSignals(False)
 
+    def _set_event_combo_index(self, ev_idx: int | None) -> None:
+        self.comboBox_stim_event_index.blockSignals(True)
+        if ev_idx is None:
+            try:
+                self.comboBox_stim_event_index.setCurrentIndex(-1)
+            finally:
+                self.comboBox_stim_event_index.blockSignals(False)
+            return
+        try:
+            combo_idx = int(self.events.index.get_loc(ev_idx))
+            self.comboBox_stim_event_index.setCurrentIndex(combo_idx)
+        finally:
+            self.comboBox_stim_event_index.blockSignals(False)
+
+    # TODO: this should be two functions
     def plot_events_as_regions(self) -> None:
         for region in self._event_regions:
             self.plotItem_seismic.removeItem(region)
         self._event_regions.clear()
+        self._visible_event_indices.clear()
 
         view_start = float(self.model.t0)
         view_stop = float(self.model.t0 + self.model.ns * self.model.si)
@@ -72,15 +97,82 @@ class StimArtefactViewer(EphysViewer):
             (self.events["start"] >= view_start) & (self.events["stop"] <= view_stop)
         ]
 
-        for _, event in visible.iterrows():
+        if visible.empty:
+            return
+
+        for event_idx, event in visible.iterrows():
             region = pg.LinearRegionItem(
                 values=(float(event["start"]), float(event["stop"])),
                 orientation="vertical",
-                movable=True,
+                movable=False,
             )
-            region.setVisible(not self._regions_hidden)
+            self.set_region_inactive(region)
             self.plotItem_seismic.addItem(region)
             self._event_regions.append(region)
+            self._visible_event_indices.append(int(event_idx))
+
+        self._set_event_combo_index(self.selected_event_idx)
+        self.set_region_active(
+            self.get_visible_region(self.selected_event_idx)
+        )
+
+    def move_to_region(self, new_region_idx: int) -> None:
+
+        print("selected", self.selected_event_idx)
+        print("new", new_region_idx)
+
+        if new_region_idx not in self._visible_event_indices:
+            event = self.events.loc[new_region_idx]
+            midpoint = (float(event["start"]) + float(event["stop"])) / 2
+
+            self._set_event_combo_index(new_region_idx)
+            self.selected_event_idx = new_region_idx
+            self.request_jump_to_time.emit(midpoint)
+            return
+
+        current_region = self.get_visible_region(self.selected_event_idx)
+        self.set_region_inactive(current_region)
+
+        new_region = self.get_visible_region(new_region_idx)
+        self.set_region_active(new_region)
+
+        self._set_event_combo_index(new_region_idx)
+        self.selected_event_idx = new_region_idx
+
+    def get_visible_region(self, ev_idx):
+        assert ev_idx in self._visible_event_indices
+        region_idx = self._visible_event_indices.index(ev_idx)
+        return self._event_regions[region_idx]
+
+    def set_region_active(self, region):
+        region.setMovable(True)
+        region.setBrush(pg.mkBrush(40, 120, 255, 95))
+        region.setHoverBrush(pg.mkBrush(40, 120, 255, 125))
+        region.update()
+
+    def set_region_inactive(self, region):
+        region.setMovable(False)
+        region.setBrush(pg.mkBrush(150, 150, 150, 80))
+        region.setHoverBrush(pg.mkBrush(150, 150, 150, 105))
+        region.update()
+
+    def _on_event_combo_changed(self, combo_idx: int) -> None:
+        if combo_idx < 0:
+            return
+        ev_idx = int(self.events.index[combo_idx])
+        self.move_to_region(ev_idx)
+
+    def _on_prev_event_clicked(self) -> None:
+        new_idx = self.selected_event_idx - 1
+        if new_idx < 0:
+            return
+        self.move_to_region(new_idx)
+
+    def _on_next_event_clicked(self) -> None:
+        new_idx = self.selected_event_idx + 1
+        if new_idx >= self.events.shape[0]:
+            return
+        self.move_to_region(new_idx)
 
     def _on_hide_regions_toggled(self, checked: bool) -> None:
         """Show or hide the event regions overlaid on the plot."""
@@ -220,6 +312,9 @@ class StimArtefactViewer(EphysViewer):
             "Type an event index and press Enter to jump to it. The "
             "prev / next arrows step by the configured step size."
         )
+        self.comboBox_stim_event_index.activated.connect(
+            self._on_event_combo_changed
+        )
         nav_widget = QtWidgets.QWidget(self.groupBox_region_select)
         nav_layout = QtWidgets.QHBoxLayout(nav_widget)
         nav_layout.setContentsMargins(0, 0, 0, 0)
@@ -227,6 +322,7 @@ class StimArtefactViewer(EphysViewer):
         self.pushButton_stim_prev = QtWidgets.QPushButton("<", nav_widget)
         self.pushButton_stim_prev.setObjectName("pushButton_stim_prev")
         self.pushButton_stim_prev.setMaximumWidth(36)
+        self.pushButton_stim_prev.clicked.connect(self._on_prev_event_clicked)
         self.lineEdit_stim_step = QtWidgets.QLineEdit("1", nav_widget)
         self.lineEdit_stim_step.setObjectName("lineEdit_stim_step")
         self.lineEdit_stim_step.setAlignment(QtCore.Qt.AlignCenter)
@@ -235,6 +331,7 @@ class StimArtefactViewer(EphysViewer):
         self.pushButton_stim_next = QtWidgets.QPushButton(">", nav_widget)
         self.pushButton_stim_next.setObjectName("pushButton_stim_next")
         self.pushButton_stim_next.setMaximumWidth(36)
+        self.pushButton_stim_next.clicked.connect(self._on_next_event_clicked)
         nav_layout.addWidget(self.pushButton_stim_prev)
         nav_layout.addWidget(self.lineEdit_stim_step)
         nav_layout.addWidget(self.pushButton_stim_next)

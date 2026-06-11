@@ -1,3 +1,4 @@
+from contextlib import suppress
 from pathlib import Path
 
 from viewephys.data_model import SpikeInterfaceDataModel
@@ -22,6 +23,10 @@ class StimArtefactBinViewer(EphysBinViewer):
 
         # TODO: add a check, the dict keys must be "raw" and "stim_artefact_removed"
         # at least
+
+    def on_stim_viewer_jump_requested(self, t: float) -> None:
+        self.lineEdit_jumpTime.setText(f"{t:.6f}")
+        self.on_jumpToTimeRequested()
 
     # TODO: we can do some refactoring here!
     def on_horizontalSliderReleased(  # noqa: C901
@@ -80,6 +85,11 @@ class StimArtefactBinViewer(EphysBinViewer):
                     t_scalar=T_SCALAR,
                     a_scalar=A_SCALAR,
                 )
+                with suppress(TypeError):
+                    viewer.request_jump_to_time.disconnect(
+                        self.on_stim_viewer_jump_requested
+                    )
+                viewer.request_jump_to_time.connect(self.on_stim_viewer_jump_requested)
 
             else:
                 viewer = viewephys(
