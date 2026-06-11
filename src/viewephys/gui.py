@@ -24,6 +24,8 @@ from viewephys.viewer.qt import create_app
 T_SCALAR = 1  # defaults s for user side
 A_SCALAR = 1e6  # defaults V for user side
 N_SAMPLES_INIT = 2000  # number of samples in the manual pick array
+# Qt's QSlider is backed by a C++ 32-bit int; this is its maximum value.
+SLIDER_INT_MAX = 2**31 - 1
 
 PICK_COLOR = (0, 255, 255)
 
@@ -157,15 +159,12 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         num_samples = self.data.get_num_samples()
         sampling_frequency = self.data.get_sampling_frequency()
 
-        # enable and set slider, based on the number of samples in the entire file
-        self.horizontalSlider.setMaximum(
-            int(np.floor(num_samples / self.window_length_n))
-        )
-        tmax = (
-            np.floor(num_samples / self.window_length_n)
-            * self.window_length_n
-            / sampling_frequency
-        )
+        # The slider value is the first sample directly, giving single-sample
+        # resolution (capped at the Qt int limit). Paging moves by one window.
+        max_first = max(0, int(num_samples) - self.window_length_n)
+        self.horizontalSlider.setMaximum(min(max_first, SLIDER_INT_MAX))
+        self.horizontalSlider.setPageStep(self.window_length_n)
+        tmax = num_samples / sampling_frequency
         self.label_smax.setText(f"{tmax:0.2f}s")
 
         tlabel = self._create_top_label()
@@ -239,7 +238,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         return tlabel
 
     def on_horizontalSliderValueChanged(self) -> None:
-        self._first_sample = int(self.horizontalSlider.value()) * self.window_length_n
+        self._first_sample = int(self.horizontalSlider.value())
         self._update_time_label()
 
     def on_lineEdit_windowSizeChanged(self) -> None:
@@ -265,14 +264,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         )
 
     def update_slider_limits(self) -> None:
-        self.horizontalSlider.setMaximum(
-            int(np.floor(self.data.get_num_samples() / self.window_length_n))
-        )
-        tmax = (
-            np.floor(self.data.get_num_samples() / self.window_length_n)
-            * self.window_length_n
-            / self.data.get_sampling_frequency()
-        )
+        num_samples = int(self.data.get_num_samples())
+        max_first = max(0, num_samples - self.window_length_n)
+        self.horizontalSlider.setMaximum(min(max_first, SLIDER_INT_MAX))
+        self.horizontalSlider.setPageStep(self.window_length_n)
+        tmax = num_samples / self.data.get_sampling_frequency()
         self.label_smax.setText(f"{tmax:0.2f}s")
 
     def _update_time_label(self) -> None:
@@ -301,15 +297,16 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         requested_sample = int(round(t * sampling_frequency))
         requested_sample = max(0, min(requested_sample, int(num_samples) - 1))
         max_first = max(0, int(num_samples) - self.window_length_n)
-        first_sample = requested_sample - self.window_length_n // 2
+        first_sample = requested_sample # - self.window_length_n // 2
 
         first_sample = max(0, min(first_sample, max_first))
         center_time = requested_sample / sampling_frequency
         self._first_sample = first_sample
-        slider_value = int(round(first_sample / self.window_length_n))
+        slider_value = first_sample
         slider_value = max(0, min(slider_value, self.horizontalSlider.maximum()))
         # Move slider for visual feedback without letting valueChanged
         # overwrite the exact first_sample we just set.
+
         self.horizontalSlider.blockSignals(True)
         self.horizontalSlider.setValue(slider_value)
         self.horizontalSlider.blockSignals(False)
