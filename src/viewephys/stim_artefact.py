@@ -18,12 +18,18 @@ if TYPE_CHECKING:
 
 
 # Visual styling for the LinearRegionItem overlays.
-_REGION_BRUSH = pg.mkBrush(120, 120, 120, 60)
-_REGION_HOVER_BRUSH = pg.mkBrush(120, 120, 120, 90)
-_REGION_SELECTED_BRUSH = pg.mkBrush(0, 100, 255, 90)
-_REGION_SELECTED_HOVER_BRUSH = pg.mkBrush(0, 100, 255, 130)
+# NOTE: the fill brushes are intentionally empty (no fill). A translucent
+# fill forces the region to repaint - and drag the underlying wiggle curve's
+# layer with it - on every hover/move frame, which is catastrophic for
+# performance over a large curve. Regions are shown by their boundary lines
+# only; ``hoverBrush == brush`` so hovering never triggers a fill repaint.
+_NO_BRUSH = pg.mkBrush(None)
+_REGION_BRUSH = _NO_BRUSH
+_REGION_HOVER_BRUSH = _NO_BRUSH
+_REGION_SELECTED_BRUSH = _NO_BRUSH
+_REGION_SELECTED_HOVER_BRUSH = _NO_BRUSH
 _REGION_PEN = pg.mkPen(80, 80, 80, width=1)
-_REGION_SELECTED_PEN = pg.mkPen(0, 60, 200, width=2)
+_REGION_SELECTED_PEN = pg.mkPen(0, 60, 200, width=1)
 
 
 # CSV column names used on disk. The on-disk format stores integer sample
@@ -633,7 +639,10 @@ class StimArtefactViewer(EphysViewer):
         region.sigRegionChangeFinished.connect(
             lambda r, i=idx: self._on_region_changed(i, r)
         )
-        self.plotItem_seismic.addItem(region)
+        # ``ignoreBounds=True`` keeps the region out of the ViewBox's bounds
+        # bookkeeping so adding/moving it never nudges auto-range or the
+        # data-bounds cache of the large wiggle curve.
+        self.plotItem_seismic.addItem(region, ignoreBounds=True)
         self._region_items[idx] = region
 
     def _apply_region_highlight(self) -> None:
@@ -1391,18 +1400,9 @@ class StimArtefactBinViewer(EphysBinViewer):
     def on_horizontalSliderReleased(self, center_time: float | None = None) -> None:
         prev = self.viewers.get(self.viewer_key)
         prev_range = None
-        prev_display_mode = None
         if prev is not None and prev.isVisible():
             xr, yr = prev.viewBox_seismic.viewRange()
             prev_range = (list(xr), list(yr))
-            prev_display_mode = getattr(prev, "_display_mode", None)
-            if prev_display_mode == DISPLAY_MODE_WIGGLE:
-                # Reloading the existing viewer while wiggle is the active
-                # controller has proven unstable when stepping to the next
-                # out-of-view region. Force the data/model refresh through
-                # density mode, then restore wiggle once the new chunk,
-                # regions, and optional overlay are all attached.
-                prev.set_display_mode("density")
 
         first = int(self._first_sample)
         last = first + int(self._nsamp_chunk)
@@ -1449,9 +1449,6 @@ class StimArtefactBinViewer(EphysBinViewer):
         # toggle is on so it tracks the new chunk window.
         if getattr(viewer, "_overlay_enabled", False):
             self.load_overlay_for_current_chunk()
-
-        if prev_display_mode == DISPLAY_MODE_WIGGLE:
-            viewer.set_display_mode(DISPLAY_MODE_WIGGLE)
 
         if prev_range is None:
             return
