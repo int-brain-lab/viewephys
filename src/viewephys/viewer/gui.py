@@ -156,6 +156,7 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
         self.plotDataItem_wiggle = pg.PlotDataItem(visible=False)
         self.plotDataItem_wiggle.setPen(pg.mkPen("#000000", width=0.9))
         self.plotItem_seismic.addItem(self.plotDataItem_wiggle)
+        self.plotDataItem_wiggle.setVisible(False)
         self.viewBox_seismic = self.plotItem_seismic.getPlotItem().getViewBox()
         self._init_menu()
         self._init_cmenu()
@@ -424,6 +425,10 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
     def set_display_mode(self, mode: str) -> None:
         if mode == self._display_mode:
             return
+        # Preserve the channel selection across the mode switch; set_model below
+        # resets trace_indices to all channels, so capture it from the previously
+        # active controller and re-apply it to the newly active one.
+        prev_indices = self.ctrl.trace_indices
         self._display_mode = mode
         if mode == DISPLAY_MODE_DENSITY:
             self.imageItem_seismic.setVisible(True)
@@ -442,6 +447,14 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
             )
             self.checkbox_auto_space_wiggle.setEnabled(True)
         self.ctrl.set_model(reset_viewbox=False)
+        if prev_indices is not None and prev_indices.size != self.model.ntr:
+            self.ctrl.trace_indices = prev_indices
+            x0 = self.model.x0
+            self.ctrl._update_plotItem(
+                tlim=None, clim=[x0 - 0.5, x0 + prev_indices.size - 0.5]
+            )
+            self.ctrl.set_gain()
+            self.ctrl.set_header()
 
 
 class Controller(abc.ABC):

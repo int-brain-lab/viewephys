@@ -128,18 +128,15 @@ class StimArtefactViewer(EphysViewer):
             self._visible_event_indices.append(int(event_idx))
 
         self._set_event_combo_index(self.selected_event_idx)
-        self.set_region_active(
-            self.get_visible_region(self.selected_event_idx)
-        )
+        self.set_region_active(self.get_visible_region(self.selected_event_idx))
 
     def move_to_region(self, new_region_idx: int) -> None:
-
         if new_region_idx not in self._visible_event_indices:
             event = self.events.loc[new_region_idx]
             si = float(self.model.si)
             midpoint = (
-                float(event["start_sample"]) + float(event["stop_sample"])
-            ) / 2 * si
+                (float(event["start_sample"]) + float(event["stop_sample"])) / 2 * si
+            )
 
             self._set_event_combo_index(new_region_idx)
             self.selected_event_idx = new_region_idx
@@ -196,9 +193,11 @@ class StimArtefactViewer(EphysViewer):
         for region in self._event_regions:
             region.setVisible(not self._regions_hidden)
 
-    def set_trace_header(self, trace_header: dict) -> None:
+    def init_trace_header(self, trace_header: dict) -> None:
         assert "ids" in trace_header
-        self._populate_channel_list(trace_header["ids"])
+        if self.listWidget_stim_channels.count() == 0:
+            # only populate on the first data update, not every refresh
+            self._populate_channel_list(trace_header["ids"])
 
     def _populate_channel_list(self, ids) -> None:
         self.listWidget_stim_channels.clear()
@@ -250,7 +249,7 @@ class StimArtefactViewer(EphysViewer):
             ctrl._update_plotItem(tlim=tlim, clim=clim)
             ctrl.set_header()
             ctrl.set_gain()
-        self._update_channel_count_label()
+            self._update_channel_count_label()
 
     def extend_gui(self) -> None:
         # Bottom container.
@@ -384,9 +383,7 @@ class StimArtefactViewer(EphysViewer):
             "Type an event index and press Enter to jump to it. The "
             "prev / next arrows step by the configured step size."
         )
-        self.comboBox_stim_event_index.activated.connect(
-            self._on_event_combo_changed
-        )
+        self.comboBox_stim_event_index.activated.connect(self._on_event_combo_changed)
         nav_widget = QtWidgets.QWidget(self.groupBox_region_select)
         nav_layout = QtWidgets.QHBoxLayout(nav_widget)
         nav_layout.setContentsMargins(0, 0, 0, 0)
@@ -520,8 +517,9 @@ def stim_artefact_viewer(
     if data is not None:
         ev.model.set_data(data.T * a_scalar, si=1 / fs, header=channels, t0=t0, taxis=0)
         ev.ctrl.set_model()
-        ev.set_trace_header(channels)
+        ev.init_trace_header(channels)  # populate channel list on first data set
         ev.plot_events_as_regions()  # TODO: centralise
+        ev._on_channels_apply()  # TODO: fold channel filtering into set_model.
 
     ev.show()
     if colormap is not None:

@@ -25,7 +25,11 @@ class StimArtefactBinViewer(EphysBinViewer):
         # at least
 
     def on_stim_viewer_jump_requested(self, t: float) -> None:
-        self.lineEdit_jumpTime.setText(f"{t:.6f}")
+        # ``t`` is the region centre; the jump time is the window first sample,
+        # so offset by half the window to keep the region centred in the view.
+        window_seconds = self.window_length_n / self.data.get_sampling_frequency()
+        first_sample_time = t - window_seconds / 2
+        self.lineEdit_jumpTime.setText(f"{first_sample_time:.6f}")
         self.on_jumpToTimeRequested()
 
     # TODO: we can do some refactoring here!

@@ -168,12 +168,13 @@ class _FakeViewer:
         return None
 
 
-def _centered_first_sample(typed_seconds, fs, ns, window_length_n):
-    """Return the expected first sample after centering a jump request."""
-    requested_sample = int(round(typed_seconds * fs))
-    requested_sample = max(0, min(requested_sample, int(ns) - 1))
+def _first_sample_for_jump(typed_seconds, fs, ns, window_length_n):
+    """Return the expected first sample after a jump request.
+
+    The typed time is the first sample of the loaded window (no centering).
+    """
     max_first = max(0, int(ns) - window_length_n)
-    first_sample = requested_sample - window_length_n // 2
+    first_sample = int(round(typed_seconds * fs))
     return max(0, min(first_sample, max_first))
 
 
@@ -183,8 +184,8 @@ def jump_window(qtbot, monkeypatch):
     qtbot.addWidget(window)
     window.data = SpikeGLXDataModel(_FakeSR())
     window._setup_viewers_and_checkboxes()
-    slider_max = int(np.floor(window.data.get_num_samples() / window.window_length_n))
-    window.horizontalSlider.setMaximum(slider_max)
+    max_first = max(0, int(window.data.get_num_samples()) - window.window_length_n)
+    window.horizontalSlider.setMaximum(max_first)
     window.horizontalSlider.setEnabled(True)
     window.lineEdit_jumpTime.setEnabled(True)
     monkeypatch.setattr(
@@ -203,20 +204,14 @@ def jump_window(qtbot, monkeypatch):
     [0.0, 0.4, 0.5, 100.0, 500.0, 500.150, 1173.67, 2199.99],
 )
 def test_jump_to_time_loads_exact_sample(jump_window, qtbot, typed_seconds):
-    """Jump-to should center the window on the requested sample, while
+    """Jump-to should load the window starting at the requested sample, while
     parking the slider near the loaded window for visual feedback only."""
     window = jump_window
     fs = window.data.get_sampling_frequency()
-    expected_first = _centered_first_sample(
+    expected_first = _first_sample_for_jump(
         typed_seconds, fs, window.data.get_num_samples(), window.window_length_n
     )
-    expected_slider = max(
-        0,
-        min(
-            int(round(expected_first / window.window_length_n)),
-            window.horizontalSlider.maximum(),
-        ),
-    )
+    expected_slider = max(0, min(expected_first, window.horizontalSlider.maximum()))
     expected_t = expected_first / fs
 
     window.lineEdit_jumpTime.setText(str(typed_seconds))
@@ -228,44 +223,36 @@ def test_jump_to_time_loads_exact_sample(jump_window, qtbot, typed_seconds):
 
 
 def test_jump_to_time_non_chunk_aligned(jump_window, qtbot):
-    """Sanity check that 500.150 s lands at the center of the loaded window."""
+    """Sanity check that 500.150 s lands at the start of the loaded window."""
     window = jump_window
     window.lineEdit_jumpTime.setText("500.150")
     window.on_jumpToTimeRequested()
 
     requested_sample = int(round(500.150 * window.data.get_sampling_frequency()))
-    assert window._first_sample + window.window_length_n // 2 == requested_sample
-    assert window._first_sample == 14_999_500
-    assert window.horizontalSlider.value() == 1500
-    assert window.lineEdit_jumpTime.text() == "499.983333"
+    assert window._first_sample == requested_sample
+    assert window._first_sample == 15_004_500
+    assert window.lineEdit_jumpTime.text() == "500.150000"
 
 
 def test_slider_drag_resets_first_sample_to_chunk(jump_window, qtbot):
-    """After a non-chunk-aligned jump, dragging the slider must snap
-    `_first_sample` back to the chunk boundary so subsequent loads use the
-    slider position."""
+    """After a jump, dragging the slider must set `_first_sample` to the slider
+    position (single-sample resolution) so subsequent loads use it."""
     window = jump_window
     window.lineEdit_jumpTime.setText("500.150")
     qtbot.keyPress(window.lineEdit_jumpTime, QtCore.Qt.Key_Return)
-    assert window._first_sample == 14_999_500  # not chunk-aligned
+    assert window._first_sample == 15_004_500
 
     window.horizontalSlider.setValue(1501)
-    assert window._first_sample == 1501 * window.window_length_n
+    assert window._first_sample == 1501
     assert window.lineEdit_jumpTime.text() == (
-        f"{1501 * window.window_length_n / window.data.get_sampling_frequency():0.6f}"
+        f"{1501 / window.data.get_sampling_frequency():0.6f}"
     )
 
 
 def test_jump_to_time_clamps_out_of_range(jump_window, qtbot):
     window = jump_window
     max_first = max(0, int(window.data.get_num_samples()) - window.window_length_n)
-    expected_slider_high = max(
-        0,
-        min(
-            int(round(max_first / window.window_length_n)),
-            window.horizontalSlider.maximum(),
-        ),
-    )
+    expected_slider_high = max(0, min(max_first, window.horizontalSlider.maximum()))
 
     window.lineEdit_jumpTime.setText("-50")
     qtbot.keyPress(window.lineEdit_jumpTime, QtCore.Qt.Key_Return)
@@ -291,14 +278,18 @@ def test_jump_to_time_ignores_garbage(jump_window, qtbot):
 
 
 def test_jump_to_time_recenters_existing_zoom(qtbot, monkeypatch):
-    """Reloaded viewers should keep zoom width and recenter on the jump time."""
+    """Reloaded viewers should keep zoom width, anchored at the new window start.
+
+    The typed jump time is the first sample of the loaded window, so the
+    preserved zoom begins at that time.
+    """
     window = EphysBinViewer()
     qtbot.addWidget(window)
 
     window.data = SpikeGLXDataModel(_FakeArraySR())
     window._setup_viewers_and_checkboxes()
     window.horizontalSlider.setMaximum(
-        int(np.floor(window.data.get_num_samples() / window.window_length_n))
+        max(0, int(window.data.get_num_samples()) - window.window_length_n)
     )
     for checkbox in window.cbs.values():
         checkbox.setChecked(False)
@@ -321,10 +312,9 @@ def test_jump_to_time_recenters_existing_zoom(qtbot, monkeypatch):
 
     x0, x1, padding = captured["viewer"].viewBox_seismic.xrange
     y0, y1, y_padding = captured["viewer"].viewBox_seismic.yrange
-    assert captured["t0"] == pytest.approx(
-        window._first_sample / window.data.get_sampling_frequency()
-    )
-    assert (x0 + x1) / 2 == pytest.approx(500.150)
+    expected_t0 = window._first_sample / window.data.get_sampling_frequency()
+    assert captured["t0"] == pytest.approx(expected_t0)
+    assert x0 == pytest.approx(expected_t0)
     assert x1 - x0 == pytest.approx(0.1)
     assert padding == 0
     assert (y0, y1, y_padding) == (10.0, 20.0, 0)

@@ -279,9 +279,10 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.lineEdit_jumpTime.setText(f"{tcur:0.6f}")
 
     def on_jumpToTimeRequested(self) -> None:
-        """Jump to the user-typed time, centering the loaded window on it.
+        """Jump to the user-typed time, loading the window from that sample.
 
-        The slider thumb is moved to the nearest chunk for visual feedback only.
+        The typed time is the first sample of the loaded window. The slider
+        thumb is moved to match for visual feedback only.
         """
         text = self.lineEdit_jumpTime.text().strip()
         if text == "" or not hasattr(self, "data"):
@@ -294,24 +295,18 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         sampling_frequency = self.data.get_sampling_frequency()
         num_samples = self.data.get_num_samples()
 
-        requested_sample = int(round(t * sampling_frequency))
-        requested_sample = max(0, min(requested_sample, int(num_samples) - 1))
         max_first = max(0, int(num_samples) - self.window_length_n)
-        first_sample = requested_sample - self.window_length_n // 2
-
+        first_sample = int(round(t * sampling_frequency))
         first_sample = max(0, min(first_sample, max_first))
-        center_time = requested_sample / sampling_frequency
         self._first_sample = first_sample
-        slider_value = first_sample
-        slider_value = max(0, min(slider_value, self.horizontalSlider.maximum()))
+        slider_value = max(0, min(first_sample, self.horizontalSlider.maximum()))
         # Move slider for visual feedback without letting valueChanged
         # overwrite the exact first_sample we just set.
-
         self.horizontalSlider.blockSignals(True)
         self.horizontalSlider.setValue(slider_value)
         self.horizontalSlider.blockSignals(False)
         self._update_time_label()
-        self.on_horizontalSliderReleased(center_time=center_time)
+        self.on_horizontalSliderReleased()
 
     def on_horizontalSliderReleased(  # noqa: C901
         self, center_time: float | None = None
