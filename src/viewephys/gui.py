@@ -168,7 +168,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self._update_time_label()
 
     def _update_time_label(self) -> None:
-        if not hasattr(self, "sr"):
+        if not hasattr(self, "data"):
             self.lineEdit_jumpTime.setText("0.000000")
             return
         tcur = self._first_sample / self.data.get_sampling_frequency()
