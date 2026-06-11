@@ -190,11 +190,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 self.cb_destripe_ap,
             ]:
                 cb.hide()
-            layout = self.frame.layout()
+            layout = self.select_recording_groupbox.layout()
             self.viewers = {}
             self.cbs = {}
             for i, step in enumerate(self.data.recordings_dict):
-                cb = QtWidgets.QCheckBox(step, self.frame)
+                cb = QtWidgets.QCheckBox(step, self.select_recording_groupbox)
                 cb.setChecked(i == 0)
                 layout.addWidget(cb)
                 self.viewers[step] = None
