@@ -207,6 +207,13 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
             self.on_checkbox_auto_space_wiggle
         )
 
+        self.region = pg.LinearRegionItem(
+            values=[0, 0.1],
+            orientation='vertical'
+        )
+        self.region.setZValue(10)
+        self.plotItem_seismic.addItem(self.region)
+
     def on_checkbox_auto_space_wiggle(self, value: bool) -> None:
         """"""
         self._auto_space_wiggle = value
