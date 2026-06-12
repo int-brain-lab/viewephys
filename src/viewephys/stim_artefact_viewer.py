@@ -35,11 +35,34 @@ class StimArtefactViewer(EphysViewer):
         self._populate_region_select()
         self._fill_region_controls_lineedits()
 
+        # For undo/redo, for now we just take snapshots of the
+        # events dataframe. This is very poor performance but
+        # a) these should not be too big
+        # b) saving deltas is very fiddly because add / delete event compeltely changes
+        # all indicies
+        self.events_snapshots = []
+        self.redo_snapshots = []
+        # Seed the stack with the baseline so the first edit is undoable and
+        # the current state always matches the top of events_snapshots.
+        self.update_snapshot()
+
     def _get_event_times(self, ev_idx: int) -> tuple[float, float]:
         event = self.events.loc[ev_idx]
         start_time = float(event["start_sample"]) / self.fs
         stop_time = float(event["end_sample"]) / self.fs
         return start_time, stop_time
+
+    def update_snapshot(self):
+        self.events_snapshots.append(
+            {
+                "events": self.events.copy(),
+                "selected_event_idx": self.selected_event_idx,
+            }
+        )
+        if len(self.events_snapshots) > 20:
+            self.events_snapshots.pop(0)
+        # A fresh action invalidates any redo branch.
+        self.redo_snapshots.clear()
 
     @staticmethod
     def _format_time(value: float) -> str:
@@ -119,6 +142,7 @@ class StimArtefactViewer(EphysViewer):
         self._apply_selected_event_time_change(
             float(start_time), float(stop_time), region=False, region_controls=True
         )
+        self.update_snapshot()
 
     def _on_region_lineedits_changed(self) -> None:
         try:
@@ -132,6 +156,32 @@ class StimArtefactViewer(EphysViewer):
         self._apply_selected_event_time_change(
             start_time, stop_time, region=True, region_controls=False
         )
+        self.update_snapshot()
+
+    def _on_undo_clicked(self) -> None:
+        # Top of the stack is the current state; need a prior state to step to.
+        if len(self.events_snapshots) <= 1:
+            return
+        # Move the current state onto redo, then restore the previous one
+        # (now the last entry in the list).
+        recent_snapshot = self.events_snapshots.pop()
+        selected_region_idx = recent_snapshot["selected_event_idx"]
+        self.redo_snapshots.append(recent_snapshot)
+        snapshot = self.events_snapshots[-1]
+        self.events = snapshot["events"].copy()
+        self.selected_event_idx = selected_region_idx
+        self._repopulate_event_widgets()
+        self.move_to_region(self.selected_event_idx)
+
+    def _on_redo_clicked(self) -> None:
+        if not self.redo_snapshots:
+            return
+        snapshot = self.redo_snapshots.pop()
+        self.events_snapshots.append(snapshot)
+        self.events = snapshot["events"].copy()
+        self.selected_event_idx = snapshot["selected_event_idx"]
+        self._repopulate_event_widgets()
+        self.move_to_region(self.selected_event_idx)
 
     def _on_save_clicked(self) -> None:
         self.events.to_csv(self.events_path, index=False)
@@ -140,6 +190,7 @@ class StimArtefactViewer(EphysViewer):
         self.events = pd.read_csv(self.events_path)
         self.selected_event_idx = int(self.events.index[0])
         self._repopulate_event_widgets()
+        self.update_snapshot()
 
     def _on_add_event_clicked(self) -> None:
         # Placing the event in the current view needs model timing (set with data).
@@ -180,6 +231,7 @@ class StimArtefactViewer(EphysViewer):
         # plot_events_as_regions() (via _repopulate_event_widgets) rebuilds the
         # visible regions list from the reindexed events.
         self._repopulate_event_widgets()
+        self.update_snapshot()
 
     def _on_del_event_clicked(self) -> None:
         if self.events.shape[0] == 1:
@@ -194,6 +246,7 @@ class StimArtefactViewer(EphysViewer):
         self.events = self.events.drop(index=current).reset_index(drop=True)
         self.selected_event_idx = 0 if current == 0 else current - 1
         self._repopulate_event_widgets()
+        self.update_snapshot()
 
     def _repopulate_event_widgets(self) -> None:
         self.plot_events_as_regions()
@@ -506,10 +559,12 @@ class StimArtefactViewer(EphysViewer):
             "Undo", self.groupBox_region_controls
         )
         self.pushButton_stim_undo.setObjectName("pushButton_stim_undo")
+        self.pushButton_stim_undo.clicked.connect(self._on_undo_clicked)
         self.pushButton_stim_redo = QtWidgets.QPushButton(
             "Redo", self.groupBox_region_controls
         )
         self.pushButton_stim_redo.setObjectName("pushButton_stim_redo")
+        self.pushButton_stim_redo.clicked.connect(self._on_redo_clicked)
         self.pushButton_stim_save = QtWidgets.QPushButton(
             "Save", self.groupBox_region_controls
         )
