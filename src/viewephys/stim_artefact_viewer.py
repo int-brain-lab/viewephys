@@ -138,9 +138,67 @@ class StimArtefactViewer(EphysViewer):
 
     def _on_load_clicked(self) -> None:
         self.events = pd.read_csv(self.events_path)
-        self._populate_region_select()
-        # Regions need model timing (t0/ns/si), which only exist once data is set.
+        self.selected_event_idx = int(self.events.index[0])
+        self._repopulate_event_widgets()
+
+    def _on_add_event_clicked(self) -> None:
+        # Placing the event in the current view needs model timing (set with data).
+        if self.model.data is None:
+            return
+
+        xmin, xmax = self.viewBox_seismic.viewRange()[0]
+        mid_time = (xmin + xmax) / 2
+        half_width = (xmax - xmin) * 0.01
+
+        start_sample = int(round((mid_time - half_width) * self.fs))
+        end_sample = int(round((mid_time + half_width) * self.fs))
+        if end_sample <= start_sample:
+            end_sample = start_sample + 1
+
+        # Insert relative to the selected event: before it if the new event
+        # starts earlier, otherwise after it. Keeps events roughly ordered
+        # instead of always appending at the end.
+        current = self.selected_event_idx
+        if start_sample < float(self.events.loc[current, "start_sample"]):
+            insert_pos = current
+        else:
+            insert_pos = current + 1
+
+        new_row = pd.DataFrame(
+            [{"start_sample": start_sample, "end_sample": end_sample}]
+        )
+        # ignore_index rebuilds a clean RangeIndex so label == position holds.
+        self.events = pd.concat(
+            [
+                self.events.iloc[:insert_pos],
+                new_row,
+                self.events.iloc[insert_pos:],
+            ],
+            ignore_index=True,
+        )
+        self.selected_event_idx = insert_pos
+        # plot_events_as_regions() (via _repopulate_event_widgets) rebuilds the
+        # visible regions list from the reindexed events.
+        self._repopulate_event_widgets()
+
+    def _on_del_event_clicked(self) -> None:
+        if self.events.shape[0] == 1:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Cannot delete event",
+                "You cannot delete all events.",
+            )
+            return
+
+        current = self.selected_event_idx
+        self.events = self.events.drop(index=current).reset_index(drop=True)
+        self.selected_event_idx = 0 if current == 0 else current - 1
+        self._repopulate_event_widgets()
+
+    def _repopulate_event_widgets(self) -> None:
         self.plot_events_as_regions()
+        self._populate_region_select()
+        self._set_event_combo_index(self.selected_event_idx)
         self._fill_region_controls_lineedits()
 
     # can centralise this somwehow?
@@ -230,7 +288,10 @@ class StimArtefactViewer(EphysViewer):
             self._visible_event_indices.append(int(event_idx))
 
         self._set_event_combo_index(self.selected_event_idx)
-        self.set_region_active(self.get_visible_region(self.selected_event_idx))
+        # The selected event may be outside the current view (e.g. after load /
+        # delete); only activate its region when it is actually plotted.
+        if self.selected_event_idx in self._visible_event_indices:
+            self.set_region_active(self.get_visible_region(self.selected_event_idx))
 
     def move_to_region(self, new_region_idx: int) -> None:
         if new_region_idx not in self._visible_event_indices:
@@ -248,9 +309,11 @@ class StimArtefactViewer(EphysViewer):
             return
 
         current_region = self.get_visible_region(self.selected_event_idx)
-        self.set_region_inactive(current_region)
+        if current_region is not None:
+            self.set_region_inactive(current_region)
 
         new_region = self.get_visible_region(new_region_idx)
+        assert new_region is not None
         self.set_region_active(new_region)
 
         self._set_event_combo_index(new_region_idx)
@@ -258,7 +321,8 @@ class StimArtefactViewer(EphysViewer):
         self._fill_region_controls_lineedits()
 
     def get_visible_region(self, ev_idx):
-        assert ev_idx in self._visible_event_indices
+        if ev_idx not in self._visible_event_indices:
+            return None
         region_idx = self._visible_event_indices.index(ev_idx)
         return self._event_regions[region_idx]
 
@@ -518,13 +582,12 @@ class StimArtefactViewer(EphysViewer):
         action_layout = QtWidgets.QHBoxLayout(action_widget)
         action_layout.setContentsMargins(0, 0, 0, 0)
         action_layout.setSpacing(4)
-        self.pushButton_stim_consume = QtWidgets.QPushButton("Consume", action_widget)
-        self.pushButton_stim_consume.setObjectName("pushButton_stim_consume")
         self.pushButton_stim_add = QtWidgets.QPushButton("Add", action_widget)
         self.pushButton_stim_add.setObjectName("pushButton_stim_add")
+        self.pushButton_stim_add.clicked.connect(self._on_add_event_clicked)
         self.pushButton_stim_del = QtWidgets.QPushButton("Del", action_widget)
         self.pushButton_stim_del.setObjectName("pushButton_stim_del")
-        action_layout.addWidget(self.pushButton_stim_consume)
+        self.pushButton_stim_del.clicked.connect(self._on_del_event_clicked)
         action_layout.addWidget(self.pushButton_stim_add)
         action_layout.addWidget(self.pushButton_stim_del)
 
