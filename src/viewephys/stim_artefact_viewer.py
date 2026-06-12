@@ -19,8 +19,10 @@ if TYPE_CHECKING:
 class StimArtefactViewer(EphysViewer):
     request_jump_to_time = QtCore.Signal(float)
 
-    def __init__(self, events_path: str | Path | None = None, *args, **kwargs) -> None:
+    def __init__(self, events_path: str | Path, fs, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
+
+        self.fs = fs
         self.extend_gui()
         self._event_regions: list[pg.LinearRegionItem] = []
         self._visible_event_indices: list[int] = []
@@ -31,6 +33,105 @@ class StimArtefactViewer(EphysViewer):
         self.events_path = events_path
         self.events = self._load_events(self.events_path)
         self._populate_region_select()
+        self._fill_region_controls_lineedits()
+
+    def _get_event_times(self, ev_idx: int) -> tuple[float, float]:
+        event = self.events.loc[ev_idx]
+        start_time = float(event["start_sample"]) / self.fs
+        stop_time = float(event["stop_sample"]) / self.fs
+        return start_time, stop_time
+
+    @staticmethod
+    def _format_time(value: float) -> str:
+        return f"{value:.3f}"
+
+    def _set_region_controls_times(self, start_time: float, stop_time: float) -> None:
+        for line_edit, value in (
+            (self.lineEdit_stim_t0, start_time),
+            (self.lineEdit_stim_t1, stop_time),
+        ):
+            line_edit.blockSignals(True)
+            line_edit.setText(self._format_time(value))
+            line_edit.blockSignals(False)
+
+    def _fill_region_controls_lineedits(self):
+        start_time, stop_time = self._get_event_times(self.selected_event_idx)
+        self._set_region_controls_times(start_time, stop_time)
+
+    def _apply_selected_event_time_change(
+        self, start_time: float, stop_time: float, region: bool, region_controls: bool
+    ) -> bool:
+        ev_idx = self.selected_event_idx
+        if ev_idx is None:
+            return False
+
+        if start_time >= stop_time:
+            self.update_widgets_after_time_change(*self._get_event_times(ev_idx))
+            return False
+
+        start_sample = int(round(start_time * self.fs))
+        stop_sample = int(round(stop_time * self.fs))
+        if start_sample >= stop_sample:
+            self.update_widgets_after_time_change(*self._get_event_times(ev_idx))
+            return False
+
+        self.events.loc[ev_idx, "start_sample"] = start_sample
+        self.events.loc[ev_idx, "stop_sample"] = stop_sample
+        self.update_widgets_after_time_change(
+            start_sample / self.fs,
+            stop_sample / self.fs,
+            region=region,
+            region_controls=region_controls,
+        )
+        return True
+
+    def update_widgets_after_time_change(
+        self, start_time, stop_time, region=True, region_controls=True
+    ):
+        if region:
+            if self.selected_event_idx in self._visible_event_indices:
+                current_region = self.get_visible_region(self.selected_event_idx)
+                current_region.setRegion((start_time, stop_time))
+
+        if region_controls:
+            self._set_region_controls_times(start_time, stop_time)
+
+        ev_idx = self.selected_event_idx
+        if ev_idx is None:
+            return
+
+        combo_idx = int(self.events.index.get_loc(ev_idx))
+        self.comboBox_stim_event_index.setItemText(
+            combo_idx, self._format_event_combo_text(ev_idx)
+        )
+
+    def _format_event_combo_text(self, ev_idx: int) -> str:
+        start_time, stop_time = self._get_event_times(ev_idx)
+        return (
+            f"{ev_idx} ({self._format_time(start_time)}, "
+            f"{self._format_time(stop_time)})"
+        )
+
+    def _on_region_change_finished(self, ev_idx: int) -> None:
+        if ev_idx != self.selected_event_idx:
+            return
+        start_time, stop_time = self.get_visible_region(ev_idx).getRegion()
+        self._apply_selected_event_time_change(
+            float(start_time), float(stop_time), region=False, region_controls=True
+        )
+
+    def _on_region_lineedits_changed(self) -> None:
+        try:
+            start_time = float(self.lineEdit_stim_t0.text())
+            stop_time = float(self.lineEdit_stim_t1.text())
+        except ValueError:
+            # TODO: flesh this out with proper exceptiosn
+            self._fill_region_controls_lineedits()
+            return
+
+        self._apply_selected_event_time_change(
+            start_time, stop_time, region=True, region_controls=False
+        )
 
     @staticmethod
     def _load_events(events_path: str | Path) -> pd.DataFrame:
@@ -48,7 +149,9 @@ class StimArtefactViewer(EphysViewer):
     # can centralise this somwehow?
     @staticmethod
     def _get_or_create(
-        title=None, events_path: str | Path | None = None
+        fs: float,
+        events_path: str | Path,
+        title=None,
     ) -> EphysViewer:
         ev = next(
             filter(
@@ -59,7 +162,7 @@ class StimArtefactViewer(EphysViewer):
         )
         if ev is None:
             ev = StimArtefactViewer(
-                events_path=events_path
+                fs=fs, events_path=events_path
             )  # maybe set this like data?
             ev.setWindowTitle(title)
 
@@ -69,16 +172,14 @@ class StimArtefactViewer(EphysViewer):
     def _populate_region_select(self) -> None:
         self.comboBox_stim_event_index.blockSignals(True)
         self.comboBox_stim_event_index.clear()
-        try:
-            self.comboBox_stim_event_index.addItems(
-                [
-                    f"{i} ({int(row.start_sample)}, {int(row.stop_sample)})"
-                    for i, row in self.events.iterrows()
-                ]
-            )
-            self.comboBox_stim_event_index.setCurrentIndex(0)
-        finally:
-            self.comboBox_stim_event_index.blockSignals(False)
+        self.comboBox_stim_event_index.addItems(
+            [
+                self._format_event_combo_text(ev_idx)
+                for ev_idx, row in self.events.iterrows()
+            ]
+        )
+        self.comboBox_stim_event_index.setCurrentIndex(0)
+        self.comboBox_stim_event_index.blockSignals(False)
 
     def _set_event_combo_index(self, ev_idx: int | None) -> None:
         self.comboBox_stim_event_index.blockSignals(True)
@@ -105,9 +206,8 @@ class StimArtefactViewer(EphysViewer):
         view_stop = float(self.model.t0 + self.model.ns * self.model.si)
 
         # The events file stores stim samples; convert to seconds for the time axis.
-        si = float(self.model.si)
-        start_s = self.events["start_sample"] * si
-        stop_s = self.events["stop_sample"] * si
+        start_s = self.events["start_sample"] / self.fs
+        stop_s = self.events["stop_sample"] / self.fs
         visible = self.events[(start_s >= view_start) & (stop_s <= view_stop)]
 
         if visible.empty:
@@ -116,11 +216,16 @@ class StimArtefactViewer(EphysViewer):
         for event_idx, event in visible.iterrows():
             region = pg.LinearRegionItem(
                 values=(
-                    float(event["start_sample"]) * si,
-                    float(event["stop_sample"]) * si,
+                    float(event["start_sample"]) / self.fs,
+                    float(event["stop_sample"]) / self.fs,
                 ),
                 orientation="vertical",
                 movable=False,
+            )
+            region.sigRegionChangeFinished.connect(
+                lambda *_, ev_idx=int(event_idx): self._on_region_change_finished(
+                    ev_idx
+                )
             )
             self.set_region_inactive(region)
             self.plotItem_seismic.addItem(region)
@@ -133,13 +238,15 @@ class StimArtefactViewer(EphysViewer):
     def move_to_region(self, new_region_idx: int) -> None:
         if new_region_idx not in self._visible_event_indices:
             event = self.events.loc[new_region_idx]
-            si = float(self.model.si)
             midpoint = (
-                (float(event["start_sample"]) + float(event["stop_sample"])) / 2 * si
+                (float(event["start_sample"]) + float(event["stop_sample"]))
+                / 2
+                / self.fs
             )
 
             self._set_event_combo_index(new_region_idx)
             self.selected_event_idx = new_region_idx
+            self._fill_region_controls_lineedits()
             self.request_jump_to_time.emit(midpoint)
             return
 
@@ -151,6 +258,7 @@ class StimArtefactViewer(EphysViewer):
 
         self._set_event_combo_index(new_region_idx)
         self.selected_event_idx = new_region_idx
+        self._fill_region_controls_lineedits()
 
     def get_visible_region(self, ev_idx):
         assert ev_idx in self._visible_event_indices
@@ -318,11 +426,13 @@ class StimArtefactViewer(EphysViewer):
         self.lineEdit_stim_t0.setObjectName("lineEdit_stim_t0")
         self.lineEdit_stim_t0.setMinimumWidth(110)
         self.lineEdit_stim_t0.setValidator(time_validator)
+        self.lineEdit_stim_t0.editingFinished.connect(self._on_region_lineedits_changed)
         self.label_stim_t1 = QtWidgets.QLabel("t1", self.groupBox_region_controls)
         self.lineEdit_stim_t1 = QtWidgets.QLineEdit(self.groupBox_region_controls)
         self.lineEdit_stim_t1.setObjectName("lineEdit_stim_t1")
         self.lineEdit_stim_t1.setMinimumWidth(110)
         self.lineEdit_stim_t1.setValidator(time_validator)
+        self.lineEdit_stim_t1.editingFinished.connect(self._on_region_lineedits_changed)
         edits_row.addWidget(self.label_stim_t0)
         edits_row.addWidget(self.lineEdit_stim_t0)
         edits_row.addWidget(self.label_stim_t1)
@@ -508,16 +618,20 @@ def stim_artefact_viewer(
     colormap: str | pg.ColorMap | matplotlib.colors.Colormap | None = None,
 ) -> StimArtefactViewer:
     create_app()
-    ev = StimArtefactViewer._get_or_create(title=title, events_path=events_path)
+    # we need the fs upfront here to convert samples in events to time
+    ev = StimArtefactViewer._get_or_create(fs=fs, events_path=events_path, title=title)
 
     if channels is None:
         channels = trace_header(version=1)
     assert "ids" in channels
 
     if data is not None:
+        if ev.fs is not None:
+            assert fs == ev.fs
         ev.model.set_data(data.T * a_scalar, si=1 / fs, header=channels, t0=t0, taxis=0)
         ev.ctrl.set_model()
         ev.init_trace_header(channels)  # populate channel list on first data set
+        ev._fill_region_controls_lineedits()
         ev.plot_events_as_regions()  # TODO: centralise
         ev._on_channels_apply()  # TODO: fold channel filtering into set_model.
 

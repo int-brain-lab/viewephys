@@ -1,9 +1,11 @@
 import numpy as np
+import pandas as pd
 import pytest
 from qtpy import QtCore, QtWidgets
 
 from viewephys.data_model import SpikeGLXDataModel
 from viewephys.gui import EphysBinViewer, create_app, viewephys
+from viewephys.stim_artefact_viewer import stim_artefact_viewer
 from viewephys.tests.test_viewer_helpers import synthetic_seismic_data
 from viewephys.viewer.gui import EasyQC, viewseis
 
@@ -247,6 +249,37 @@ def test_slider_drag_resets_first_sample_to_chunk(jump_window, qtbot):
     assert window.lineEdit_jumpTime.text() == (
         f"{1501 / window.data.get_sampling_frequency():0.6f}"
     )
+
+
+def test_stim_region_lineedits_fill_from_samples(qtbot, synthetic_seis, tmp_path):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10, 30],
+            "stop_sample": [20, 50],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels=header,
+        events_path=events_path,
+        title="test_stim_region_lineedits_fill_from_samples",
+    )
+    qtbot.addWidget(window)
+
+    assert window.lineEdit_stim_t0.text() == "0.010000"
+    assert window.lineEdit_stim_t1.text() == "0.020000"
+
+    window.move_to_region(1)
+
+    assert window.lineEdit_stim_t0.text() == "0.030000"
+    assert window.lineEdit_stim_t1.text() == "0.050000"
+
+    window.close()
+    window.deleteLater()
 
 
 def test_jump_to_time_clamps_out_of_range(jump_window, qtbot):
