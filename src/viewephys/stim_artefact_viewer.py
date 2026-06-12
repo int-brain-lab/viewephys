@@ -444,6 +444,10 @@ class StimArtefactViewer(EphysViewer):
         self.listWidget_stim_channels.clearSelection()
         self._update_channel_count_label()
 
+    def _on_channels_group_toggled(self, checked: bool) -> None:
+        """Collapse the channels group box content when unchecked."""
+        self._channels_content.setVisible(checked)
+
     def _on_channels_apply(self) -> None:
         items = self.listWidget_stim_channels.selectedItems()
         total = self.listWidget_stim_channels.count()
@@ -656,6 +660,7 @@ class StimArtefactViewer(EphysViewer):
         self.groupBox_channels.setObjectName("groupBox_channels")
         self.groupBox_channels.setCheckable(True)
         self.groupBox_channels.setChecked(True)
+        self.groupBox_channels.toggled.connect(self._on_channels_group_toggled)
 
         channels_layout = QtWidgets.QVBoxLayout(self.groupBox_channels)
         channels_layout.setContentsMargins(8, 8, 8, 8)
