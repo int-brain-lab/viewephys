@@ -1,6 +1,8 @@
 from contextlib import suppress
 from pathlib import Path
 
+from qtpy import QtCore
+
 from viewephys.data_model import SpikeInterfaceDataModel
 from viewephys.gui import A_SCALAR, T_SCALAR, EphysBinViewer, viewephys
 from viewephys.stim_artefact_viewer import stim_artefact_viewer
@@ -33,6 +35,18 @@ class StimArtefactBinViewer(EphysBinViewer):
             )
 
         super().__init__(recordings_dict, *args, **kwargs)
+
+        # The .ui defines a fixed window height, but the recording-step
+        # checkboxes are added dynamically (one per recording) for
+        # spikeinterface, so the group box height varies. Snap only the height
+        # to the minimum the content needs (keeping the predefined width).
+        # Deferred so it runs after the layout has been activated; an immediate
+        # call would use the pre-layout geometry and leave slack.
+        QtCore.QTimer.singleShot(0, self._snap_height_to_content)
+
+    def _snap_height_to_content(self) -> None:
+        self.layout().activate()
+        self.resize(self.width(), self.minimumSizeHint().height())
 
     def on_stim_viewer_jump_requested(self, t: float) -> None:
         # ``t`` is the region centre; the jump time is the window first sample,
