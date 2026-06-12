@@ -183,6 +183,9 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
 
         # Keep the top strip x-linked, but hide its duplicate x-axis.
         self.plotItem_header_h.getPlotItem().hideAxis("bottom")
+        # Give the right-side header the same label height as the seismic bottom axis
+        # so its ViewBox stays flush with the seismic display.
+        self.plotItem_header_v.getAxis("bottom").setLabel(" ")
 
         self.hoverPlotWidgets = {"Trace": None, "Spectrum": None, "Spectrogram": None}
         scene = self.viewBox_seismic.scene()
