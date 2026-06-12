@@ -415,6 +415,14 @@ class StimArtefactViewer(EphysViewer):
         for region in self._event_regions:
             region.setVisible(not self._regions_hidden)
 
+    def _on_show_trace_header_toggled(self, checked: bool) -> None:
+        """Show or hide the trace header plots (top, right) and trace combobox."""
+        visible = bool(checked)
+        self.plotItem_header_h.setVisible(visible)
+        self.plotItem_header_v.setVisible(visible)
+        # frame_header_h contains the trace (header) combobox.
+        self.frame_header_h.setVisible(visible)
+
     def init_trace_header(self, trace_header: dict) -> None:
         assert "ids" in trace_header
         if self.listWidget_stim_channels.count() == 0:
@@ -478,6 +486,14 @@ class StimArtefactViewer(EphysViewer):
             self._update_channel_count_label()
 
     def extend_gui(self) -> None:
+        # Add a View-menu toggle for the trace header plots and trace combobox.
+        self.actionShowTraceHeader = QtWidgets.QAction("Show trace header", self)
+        self.actionShowTraceHeader.setObjectName("actionShowTraceHeader")
+        self.actionShowTraceHeader.setCheckable(True)
+        self.actionShowTraceHeader.setChecked(True)
+        self.actionShowTraceHeader.toggled.connect(self._on_show_trace_header_toggled)
+        self.menuView.addAction(self.actionShowTraceHeader)
+
         # Bottom container.
         bottom_widget = QtWidgets.QWidget(self.centralwidget)
         bottom_widget.setObjectName("widget_stim_bottom")
