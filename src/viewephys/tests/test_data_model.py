@@ -71,3 +71,12 @@ class TestDataModel:
         )
 
         # Filtering alone is not tested.
+
+    def test_spikeinterface_no_channel_locs(self):
+        pass
+
+    def test_spikeinterface_no_probe(self):
+        pass
+
+    def test_spikeinterface_with_prbe(self):
+        pass
