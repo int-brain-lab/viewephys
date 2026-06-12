@@ -31,14 +31,14 @@ class StimArtefactViewer(EphysViewer):
 
         # do some validation
         self.events_path = events_path
-        self.events = self._load_events(self.events_path)
+        self.events = pd.read_csv(events_path)
         self._populate_region_select()
         self._fill_region_controls_lineedits()
 
     def _get_event_times(self, ev_idx: int) -> tuple[float, float]:
         event = self.events.loc[ev_idx]
         start_time = float(event["start_sample"]) / self.fs
-        stop_time = float(event["stop_sample"]) / self.fs
+        stop_time = float(event["end_sample"]) / self.fs
         return start_time, stop_time
 
     @staticmethod
@@ -70,16 +70,16 @@ class StimArtefactViewer(EphysViewer):
             return False
 
         start_sample = int(round(start_time * self.fs))
-        stop_sample = int(round(stop_time * self.fs))
-        if start_sample >= stop_sample:
+        end_sample = int(round(stop_time * self.fs))
+        if start_sample >= end_sample:
             self.update_widgets_after_time_change(*self._get_event_times(ev_idx))
             return False
 
         self.events.loc[ev_idx, "start_sample"] = start_sample
-        self.events.loc[ev_idx, "stop_sample"] = stop_sample
+        self.events.loc[ev_idx, "end_sample"] = end_sample
         self.update_widgets_after_time_change(
             start_sample / self.fs,
-            stop_sample / self.fs,
+            end_sample / self.fs,
             region=region,
             region_controls=region_controls,
         )
@@ -133,18 +133,15 @@ class StimArtefactViewer(EphysViewer):
             start_time, stop_time, region=True, region_controls=False
         )
 
-    @staticmethod
-    def _load_events(events_path: str | Path) -> pd.DataFrame:
-        events = pd.read_csv(events_path)
-        if "stop_sample" not in events.columns and "end_sample" in events.columns:
-            events = events.rename(columns={"end_sample": "stop_sample"})
-        missing = {"start_sample", "stop_sample"} - set(events.columns)
-        if missing:
-            raise ValueError(
-                f"Events CSV must contain start_sample and stop_sample columns; "
-                f"missing {sorted(missing)}. Found {list(events.columns)}."
-            )
-        return events
+    def _on_save_clicked(self) -> None:
+        self.events.to_csv(self.events_path, index=False)
+
+    def _on_load_clicked(self) -> None:
+        self.events = pd.read_csv(self.events_path)
+        self._populate_region_select()
+        # Regions need model timing (t0/ns/si), which only exist once data is set.
+        self.plot_events_as_regions()
+        self._fill_region_controls_lineedits()
 
     # can centralise this somwehow?
     @staticmethod
@@ -207,7 +204,7 @@ class StimArtefactViewer(EphysViewer):
 
         # The events file stores stim samples; convert to seconds for the time axis.
         start_s = self.events["start_sample"] / self.fs
-        stop_s = self.events["stop_sample"] / self.fs
+        stop_s = self.events["end_sample"] / self.fs
         visible = self.events[(start_s >= view_start) & (stop_s <= view_stop)]
 
         if visible.empty:
@@ -217,7 +214,7 @@ class StimArtefactViewer(EphysViewer):
             region = pg.LinearRegionItem(
                 values=(
                     float(event["start_sample"]) / self.fs,
-                    float(event["stop_sample"]) / self.fs,
+                    float(event["end_sample"]) / self.fs,
                 ),
                 orientation="vertical",
                 movable=False,
@@ -239,7 +236,7 @@ class StimArtefactViewer(EphysViewer):
         if new_region_idx not in self._visible_event_indices:
             event = self.events.loc[new_region_idx]
             midpoint = (
-                (float(event["start_sample"]) + float(event["stop_sample"]))
+                (float(event["start_sample"]) + float(event["end_sample"]))
                 / 2
                 / self.fs
             )
@@ -453,10 +450,12 @@ class StimArtefactViewer(EphysViewer):
             "Save", self.groupBox_region_controls
         )
         self.pushButton_stim_save.setObjectName("pushButton_stim_save")
+        self.pushButton_stim_save.clicked.connect(self._on_save_clicked)
         self.pushButton_stim_load = QtWidgets.QPushButton(
             "Load", self.groupBox_region_controls
         )
         self.pushButton_stim_load.setObjectName("pushButton_stim_load")
+        self.pushButton_stim_load.clicked.connect(self._on_load_clicked)
         btn_row.addWidget(self.pushButton_stim_undo)
         btn_row.addWidget(self.pushButton_stim_redo)
         btn_row.addWidget(self.pushButton_stim_save)

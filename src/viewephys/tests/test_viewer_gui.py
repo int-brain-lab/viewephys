@@ -257,7 +257,7 @@ def test_stim_region_lineedits_fill_from_samples(qtbot, synthetic_seis, tmp_path
     pd.DataFrame(
         {
             "start_sample": [10, 30],
-            "stop_sample": [20, 50],
+            "end_sample": [20, 50],
         }
     ).to_csv(events_path, index=False)
 
