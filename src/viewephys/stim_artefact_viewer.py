@@ -46,6 +46,17 @@ class StimArtefactViewer(EphysViewer):
         # the current state always matches the top of events_snapshots.
         self.update_snapshot()
 
+        # Yellow overlay of the stim-removed signal, drawn on top of the
+        # wiggle traces. It shares the primary model's geometry, gain and
+        # channel selection (see _refresh_overlay).
+        self._overlay_data = None
+        self._overlay_item = pg.PlotDataItem(visible=False)
+        self._overlay_item.setPen(pg.mkPen("#FFD700", width=0.9))
+        self.plotItem_seismic.addItem(self._overlay_item)
+        self.checkBox_stim_overlay.toggled.connect(self._on_overlay_toggled)
+        # Overlay only applies in wiggle mode; the viewer boots in density mode.
+        self._refresh_overlay()
+
     def _get_event_times(self, ev_idx: int) -> tuple[float, float]:
         event = self.events.loc[ev_idx]
         start_time = float(event["start_sample"]) / self.fs
@@ -415,6 +426,49 @@ class StimArtefactViewer(EphysViewer):
         for region in self._event_regions:
             region.setVisible(not self._regions_hidden)
 
+    def set_overlay_data(self, data) -> None:
+        """Store the stim-removed array used for the wiggle overlay.
+
+        It must share the primary model's geometry (same shape as the array
+        passed to the model after the .T transform).
+        """
+        self._overlay_data = data
+        self._refresh_overlay()
+
+    def _on_overlay_toggled(self, checked: bool) -> None:
+        self._refresh_overlay()
+
+    def _refresh_overlay(self) -> None:
+        # The overlay reuses the wiggle formula, so it is only meaningful in
+        # wiggle mode: grey out the toggle when density mode is active.
+        is_wiggle = self.ctrl is self._ctrl_wiggle
+        self.checkBox_stim_overlay.setEnabled(is_wiggle)
+        show = (
+            self.checkBox_stim_overlay.isChecked()
+            and self._overlay_data is not None
+            and is_wiggle
+        )
+        if not show:
+            self._overlay_item.setVisible(False)
+            self._overlay_item.clear()
+            return
+        # Same gain / trace selection / auto-spacing as the primary trace.
+        x, y = self._ctrl_wiggle.compute_wiggle_xy(self._overlay_data)
+        self._overlay_item.setData(x=x, y=y)
+        self._overlay_item.setVisible(True)
+
+    def set_display_mode(self, mode: str) -> None:
+        super().set_display_mode(mode)
+        self._refresh_overlay()
+
+    def editGain(self) -> None:
+        super().editGain()
+        self._refresh_overlay()
+
+    def on_checkbox_auto_space_wiggle(self, value: bool) -> None:
+        super().on_checkbox_auto_space_wiggle(value)
+        self._refresh_overlay()
+
     def _on_show_trace_header_toggled(self, checked: bool) -> None:
         """Show or hide the trace header plots (top, right) and trace combobox."""
         visible = bool(checked)
@@ -484,6 +538,8 @@ class StimArtefactViewer(EphysViewer):
             ctrl.set_header()
             ctrl.set_gain()
             self._update_channel_count_label()
+        # Channel filtering changed trace_indices; keep the overlay in step.
+        self._refresh_overlay()
 
     def extend_gui(self) -> None:
         # Add a View-menu toggle for the trace header plots and trace combobox.
@@ -754,6 +810,7 @@ def stim_artefact_viewer(
     t_scalar: float = T_SCALAR,
     a_scalar: float = A_SCALAR,
     colormap: str | pg.ColorMap | matplotlib.colors.Colormap | None = None,
+    data_stim_removed: np.ndarray | None = None,
 ) -> StimArtefactViewer:
     create_app()
     # we need the fs upfront here to convert samples in events to time
@@ -772,6 +829,10 @@ def stim_artefact_viewer(
         ev._fill_region_controls_lineedits()
         ev.plot_events_as_regions()  # TODO: centralise
         ev._on_channels_apply()  # TODO: fold channel filtering into set_model.
+        if data_stim_removed is not None:
+            # Same geometry as the primary data; apply the matching transform.
+            assert data_stim_removed.shape == data.shape
+            ev.set_overlay_data(data_stim_removed.T * a_scalar)
 
     ev.show()
     if colormap is not None:

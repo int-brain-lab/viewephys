@@ -5,6 +5,11 @@ from viewephys.data_model import SpikeInterfaceDataModel
 from viewephys.gui import A_SCALAR, T_SCALAR, EphysBinViewer, viewephys
 from viewephys.stim_artefact_viewer import stim_artefact_viewer
 
+# Pre-expected recording names in ``recordings_dict``: "raw" is shown in the
+# stim viewer, and "stim_artefact_removed" is overlaid on top of it in yellow.
+RAW_KEY = "raw"
+STIM_REMOVED_KEY = "stim_artefact_removed"
+
 
 class StimArtefactBinViewer(EphysBinViewer):
     """"""
@@ -19,10 +24,15 @@ class StimArtefactBinViewer(EphysBinViewer):
         # FIX NAMING
         self.csv_path = Path(filepath)
 
-        super().__init__(recordings_dict, *args, **kwargs)
+        # The dict must at least carry the raw band and the stim-removed band.
+        missing = {RAW_KEY, STIM_REMOVED_KEY} - set(recordings_dict)
+        if missing:
+            raise ValueError(
+                "recordings_dict must contain the keys "
+                f"{RAW_KEY!r} and {STIM_REMOVED_KEY!r}; missing: {sorted(missing)}"
+            )
 
-        # TODO: add a check, the dict keys must be "raw" and "stim_artefact_removed"
-        # at least
+        super().__init__(recordings_dict, *args, **kwargs)
 
     def on_stim_viewer_jump_requested(self, t: float) -> None:
         # ``t`` is the region centre; the jump time is the window first sample,
@@ -79,6 +89,11 @@ class StimArtefactBinViewer(EphysBinViewer):
             data = self.data.get_data(first, last, k, raw=raw)
 
             if k == "raw":
+                # Source the overlay from the pre-expected stim-removed band in
+                # the recordings dict, over the same window as the raw data.
+                data_stim_removed = self.data.get_data(
+                    first, last, STIM_REMOVED_KEY, raw=raw
+                )
                 viewer = stim_artefact_viewer(
                     data,
                     self.data.get_sampling_frequency(),
@@ -88,6 +103,7 @@ class StimArtefactBinViewer(EphysBinViewer):
                     t0=t0 * T_SCALAR,
                     t_scalar=T_SCALAR,
                     a_scalar=A_SCALAR,
+                    data_stim_removed=data_stim_removed,
                 )
                 with suppress(TypeError):
                     viewer.request_jump_to_time.disconnect(
