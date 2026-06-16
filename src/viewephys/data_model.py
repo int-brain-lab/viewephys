@@ -162,9 +162,6 @@ class SpikeGLXDataModel(AbstractDataModel):
     def get_probe_information(self) -> str:
         return f"Neuropixels v{self.sr.major_version}"
 
-    def get_neuropixels_version(self) -> int:
-        return self.sr.major_version
-
     @override
     def get_num_channels(self) -> int:
         """Total channel count including sync channels."""

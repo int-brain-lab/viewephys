@@ -81,18 +81,6 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self._update_time_label()
         self.show()
 
-        #        self.viewers: dict[str, EphysViewer | None] = {
-        #            "butterworth": None,
-        #            "destripe": None,
-        #            "raw": None,
-        #            "broadband": None,
-        #        }
-        #       self.cbs: dict[str, QtWidgets.QCheckBox] = {
-        #           "butterworth": self.cb_butterworth_ap,
-        #           "broadband": self.cb_butterworth_lf,
-        #           "destripe": self.cb_destripe_ap,
-        #           "raw": self.cb_raw_ap,
-        #       }
         self.data: SpikeGLXDataModel | SpikeInterfaceDataModel
 
         if (
