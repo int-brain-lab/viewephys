@@ -33,7 +33,7 @@ class TestDataModel:
         assert model.get_sampling_frequency() == sr.fs
         assert model.get_recording_length() == sr.rl
         assert model.get_file_path() == sr.file_bin
-        assert model.get_neuropixels_version() == sr.major_version
+        assert model.get_probe_information() == "Neuropixels v2.4"
         assert model.get_num_channels() == sr.nc
         assert model.get_saturation_adc() == sr.range_volts[0] * 1e6
         assert model.get_header() is sr.geometry
