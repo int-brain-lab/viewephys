@@ -13,7 +13,6 @@ from viewephys.data_model import SpikeGLXDataModel, SpikeInterfaceDataModel
 
 
 class TestSpikeGLXDataModel:
-
     def test_spikeglx_mode(self, tmp_path):
         """Simple pass-through checks for the wrapped SpikeGLX reader."""
         meta_path = tmp_path / "my_bin_file.bin"
@@ -78,8 +77,8 @@ class TestSpikeGLXDataModel:
 
         # Filtering alone is not tested.
 
-class SpikeInterfaceDataModel:
 
+class TestSpikeInterfaceDataModel:
     def test_spikeinterface_no_channel_locs(self):
         """
         Test spikeinterface model is correct in the case no channel locations
