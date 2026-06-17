@@ -102,7 +102,7 @@ class Model:
         return np.arange(self.ns) * self.si + self.t0
 
 
-class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
+class EasyQC(QtWidgets.QMainWindow):
     """Reusable seismic-style viewer used by viewephys."""
 
     model: Model
@@ -140,6 +140,10 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
+
         self.layers = {}
         self.model = Model(None, None)
         self._display_mode = DISPLAY_MODE_DENSITY
@@ -195,7 +199,7 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
         scene.sigMouseClicked.connect(self.mouseClick)
         self.lineEdit_gain.returnPressed.connect(self.editGain)
         self.lineEdit_sort.returnPressed.connect(self.editSort)
-        self.comboBox_header.activated[str].connect(self.ctrl.set_header)
+        self.comboBox_header.currentTextChanged.connect(self.ctrl.set_header)
         self.viewBox_seismic.sigRangeChanged.connect(self.on_sigRangeChanged)
         self.horizontalScrollBar.valueChanged.connect(self.on_horizontalSliderChange)
         self.verticalScrollBar.valueChanged.connect(self.on_verticalSliderChange)
