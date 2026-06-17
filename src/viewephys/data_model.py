@@ -331,18 +331,12 @@ class SpikeInterfaceDataModel(AbstractDataModel):
         # the SpikeInterface API.
         return None
 
-    def _has_channel_locations(self, recording) -> bool:
-        try:
-            recording.get_channel_locations()
-            return True
-        except Exception:
-            return False
+    def perform_checks_on_recordings(self):  # noqa
+        """ """
+        first_has_locations = self._has_channel_locations(self.first_recording)
+        has_probe = self.first_recording.has_probe()
 
-    def _validate_state_consistency(
-        self,
-        first_has_locations: bool,
-        has_probe: bool,
-    ) -> None:
+        # Perform checks that all recordings are comparable and supported.
         for key in list(self.recordings_dict.keys())[1:]:
             rec = self.recordings_dict[key]
 
@@ -353,6 +347,7 @@ class SpikeInterfaceDataModel(AbstractDataModel):
                 )
 
             rec_has_locations = self._has_channel_locations(rec)
+
             if rec_has_locations != first_has_locations:
                 raise ValueError(
                     "The first recording "
@@ -371,7 +366,7 @@ class SpikeInterfaceDataModel(AbstractDataModel):
                     "of them."
                 )
 
-    def _validate_basic_properties(self) -> tuple[float, int, np.ndarray, np.ndarray]:
+        # Validate basic properties
         first_sampling_frequency = self.first_recording.get_sampling_frequency()
         first_num_samples = self.first_recording.get_num_samples(segment_index=0)
         first_gains = self.first_recording.get_channel_gains()
@@ -388,104 +383,67 @@ class SpikeInterfaceDataModel(AbstractDataModel):
                 f"{self.first_key} must share the same offset."
             )
 
-        return first_sampling_frequency, first_num_samples, first_gains, first_offsets
+        for key in list(self.recordings_dict.keys())[1:]:
+            rec = self.recordings_dict[key]
 
-    def _validate_matching_properties(
-        self,
-        key: str,
-        rec,
-        first_sampling_frequency: float,
-        first_num_samples: int,
-        first_gains: np.ndarray,
-        first_offsets: np.ndarray,
-        first_has_locations: bool,
-        has_probe: bool,
-    ) -> None:
-        if rec.get_sampling_frequency() != first_sampling_frequency:
-            raise ValueError(
-                "The sampling frequency for recording "
-                f"{key} ({rec.get_sampling_frequency()} Hz) does not match "
-                f"the first recording {self.first_key} "
-                f"({first_sampling_frequency} Hz)."
-            )
+            if rec.get_sampling_frequency() != first_sampling_frequency:
+                raise ValueError(
+                    "The sampling frequency for recording "
+                    f"{key} ({rec.get_sampling_frequency()} Hz) does not "
+                    "match the first recording "
+                    f"{self.first_key} ({first_sampling_frequency} Hz)."
+                )
 
-        if rec.get_num_samples(segment_index=0) != first_num_samples:
-            raise ValueError(
-                "The number of samples for recording "
-                f"{key} ({rec.get_num_samples(segment_index=0)}) does not "
-                f"match the first recording {self.first_key} "
-                f"({first_num_samples})."
-            )
+            if rec.get_num_samples(segment_index=0) != first_num_samples:
+                raise ValueError(
+                    "The number of samples for recording "
+                    f"{key} ({rec.get_num_samples(segment_index=0)}) does "
+                    "not match the first recording "
+                    f"{self.first_key} ({first_num_samples})."
+                )
 
-        if not np.array_equal(rec.get_channel_gains(), first_gains):
-            raise ValueError(
-                "The channel gains for recording "
-                f"{key} do not match the first recording {self.first_key}."
-            )
+            if not np.array_equal(rec.get_channel_gains(), first_gains):
+                raise ValueError(
+                    "The channel gains for recording "
+                    f"{key} do not match the first recording "
+                    f"{self.first_key}."
+                )
 
-        if not np.array_equal(rec.get_channel_offsets(), first_offsets):
-            raise ValueError(
-                "The channel offsets for recording "
-                f"{key} do not match the first recording {self.first_key}."
-            )
+            if not np.array_equal(rec.get_channel_offsets(), first_offsets):
+                raise ValueError(
+                    "The channel offsets for recording "
+                    f"{key} do not match the first recording "
+                    f"{self.first_key}."
+                )
 
-        if first_has_locations and not np.array_equal(
-            self.first_recording.get_channel_locations(),
-            rec.get_channel_locations(),
-        ):
-            raise ValueError(
-                f"The channel locations for the first recording and {key} do not match."
-            )
-
-        if has_probe:
-            rec_probe = rec.get_probe()
-            first_probe = self.first_recording.get_probe()
-            if not np.array_equal(
-                rec_probe.contact_positions, first_probe.contact_positions
+            if first_has_locations and not np.array_equal(
+                self.first_recording.get_channel_locations(),
+                rec.get_channel_locations(),
             ):
                 raise ValueError(
-                    "The contact locations on the probe do not match "
-                    f"between recordings {self.first_key} and {key}"
-                )
-            if not np.array_equal(rec_probe.shank_ids, first_probe.shank_ids):
-                raise ValueError(
-                    "The shank IDs on the probe do not match between "
-                    f"recordings {self.first_key} and {key}"
+                    f"The channel locations for the first recording "
+                    f"and {key} do not match."
                 )
 
-    def _validate_recording_properties(
-        self,
-        first_has_locations: bool,
-        has_probe: bool,
-    ) -> None:
-        (
-            first_sampling_frequency,
-            first_num_samples,
-            first_gains,
-            first_offsets,
-        ) = self._validate_basic_properties()
+            if has_probe:
+                rec_probe = rec.get_probe()
+                first_probe = self.first_recording.get_probe()
+                if not np.array_equal(
+                    rec_probe.contact_positions, first_probe.contact_positions
+                ):
+                    raise ValueError(
+                        "The contact locations on the probe do not match "
+                        f"between recordings {self.first_key} and {key}"
+                    )
+                if not np.array_equal(rec_probe.shank_ids, first_probe.shank_ids):
+                    raise ValueError(
+                        "The shank IDs on the probe do not match between "
+                        f"recordings {self.first_key} and {key}"
+                    )
 
-        for key in list(self.recordings_dict.keys())[1:]:
-            self._validate_matching_properties(
-                key,
-                self.recordings_dict[key],
-                first_sampling_frequency,
-                first_num_samples,
-                first_gains,
-                first_offsets,
-                first_has_locations,
-                has_probe,
-            )
-
-    def perform_checks_on_recordings(self):
-        """
-        Validate that multiple recordings are compatible preprocessing views.
-
-        We assume the recordings share the same underlying signal and therefore
-        must agree on state, sampling, and probe metadata.
-        """
-        first_has_locations = self._has_channel_locations(self.first_recording)
-        has_probe = self.first_recording.has_probe()
-
-        self._validate_state_consistency(first_has_locations, has_probe)
-        self._validate_recording_properties(first_has_locations, has_probe)
+    def _has_channel_locations(self, recording) -> bool:
+        try:
+            recording.get_channel_locations()
+            return True
+        except Exception:
+            return False

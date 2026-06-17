@@ -22,6 +22,5 @@ viewer = EphysBinViewer(
         "highpass": highpass,
     }
 )
-# viewer.show()
 
 app.exec()
