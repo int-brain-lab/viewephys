@@ -282,6 +282,39 @@ def test_stim_region_lineedits_fill_from_samples(qtbot, synthetic_seis, tmp_path
     window.deleteLater()
 
 
+def test_stim_region_lineedits_apply_first_time_offset(qtbot, synthetic_seis, tmp_path):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10, 30],
+            "end_sample": [20, 50],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels=header,
+        events_path=events_path,
+        title="test_stim_region_lineedits_apply_first_time_offset",
+        first_time=5.0,
+    )
+    qtbot.addWidget(window)
+
+    # The recording starts at t=5s, so sample 10 maps to 5.010s.
+    assert window.lineEdit_stim_t0.text() == "5.010000"
+    assert window.lineEdit_stim_t1.text() == "5.020000"
+
+    window.move_to_region(1)
+
+    assert window.lineEdit_stim_t0.text() == "5.030000"
+    assert window.lineEdit_stim_t1.text() == "5.050000"
+
+    window.close()
+    window.deleteLater()
+
+
 def test_jump_to_time_clamps_out_of_range(jump_window, qtbot):
     window = jump_window
     max_first = max(0, int(window.data.get_num_samples()) - window.window_length_n)

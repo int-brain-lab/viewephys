@@ -85,7 +85,10 @@ class StimArtefactBinViewer(EphysBinViewer):
 
         first = int(self._first_sample)
         last = first + int(self.window_length_n)
-        t0 = first / self.data.get_sampling_frequency()
+        t0 = float(self.data.get_times()[first])
+        # Timestamp of sample 0: the events file stores absolute sample indices,
+        # which must be offset by this when converted to seconds.
+        first_time = float(self.data.get_times()[0])
 
         # Old data flow preserved: fetch raw once, branch per preprocessing step.
         # A fully general interface would re-fetch inside each get_data() call
@@ -115,6 +118,7 @@ class StimArtefactBinViewer(EphysBinViewer):
                     events_path=self.csv_path,
                     title=k,
                     t0=t0 * T_SCALAR,
+                    first_time=first_time,
                     t_scalar=T_SCALAR,
                     a_scalar=A_SCALAR,
                     data_stim_removed=data_stim_removed,

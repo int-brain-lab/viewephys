@@ -157,15 +157,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
     def _setup_slider(self):
         num_samples = self.data.get_num_samples()
-        sampling_frequency = self.data.get_sampling_frequency()
+        times = self.data.get_times()
 
         # The slider value is the first sample directly, giving single-sample
         # resolution (capped at the Qt int limit). Paging moves by one window.
         max_first = max(0, int(num_samples) - self.window_length_n)
         self.horizontalSlider.setMaximum(min(max_first, SLIDER_INT_MAX))
         self.horizontalSlider.setPageStep(self.window_length_n)
-        tmax = num_samples / sampling_frequency
-        self.label_smax.setText(f"{tmax:0.2f}s")
+        self.label_smin.setText(f"{float(times[0]):0.2f}s")
+        self.label_smax.setText(f"{float(times[-1]):0.2f}s")
 
         tlabel = self._create_top_label()
         self.label.setText(tlabel)
@@ -265,17 +265,18 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
     def update_slider_limits(self) -> None:
         num_samples = int(self.data.get_num_samples())
+        times = self.data.get_times()
         max_first = max(0, num_samples - self.window_length_n)
         self.horizontalSlider.setMaximum(min(max_first, SLIDER_INT_MAX))
         self.horizontalSlider.setPageStep(self.window_length_n)
-        tmax = num_samples / self.data.get_sampling_frequency()
-        self.label_smax.setText(f"{tmax:0.2f}s")
+        self.label_smin.setText(f"{float(times[0]):0.2f}s")
+        self.label_smax.setText(f"{float(times[-1]):0.2f}s")
 
     def _update_time_label(self) -> None:
         if not hasattr(self, "data"):
             self.lineEdit_jumpTime.setText("0.000000")
             return
-        tcur = self._first_sample / self.data.get_sampling_frequency()
+        tcur = float(self.data.get_times()[self._first_sample])
         self.lineEdit_jumpTime.setText(f"{tcur:0.6f}")
 
     def on_jumpToTimeRequested(self) -> None:
@@ -292,11 +293,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         except ValueError:
             return
 
-        sampling_frequency = self.data.get_sampling_frequency()
         num_samples = self.data.get_num_samples()
+        times = self.data.get_times()
 
         max_first = max(0, int(num_samples) - self.window_length_n)
-        first_sample = int(round(t * sampling_frequency))
+        first_sample = int(np.searchsorted(times, t))
         first_sample = max(0, min(first_sample, max_first))
         self._first_sample = first_sample
         slider_value = max(0, min(first_sample, self.horizontalSlider.maximum()))
@@ -334,7 +335,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
         first = int(self._first_sample)
         last = first + int(self.window_length_n)
-        t0 = first / self.data.get_sampling_frequency()
+        t0 = float(self.data.get_times()[first])
 
         # Old data flow preserved: fetch raw once, branch per preprocessing step.
         # A fully general interface would re-fetch inside each get_data() call

@@ -16,13 +16,38 @@ if TYPE_CHECKING:
     import matplotlib
 
 
+def samples_to_seconds(samples, fs: float, first_time: float = 0.0):
+    """Convert sample indices to seconds on the recording's time axis.
+
+    The recording may start at a non-zero time, so ``first_time`` (the
+    timestamp of sample 0) is added to the sample offset. Accepts scalars,
+    arrays or pandas Series.
+    """
+    return samples / fs + first_time
+
+
+def seconds_to_samples(seconds, fs: float, first_time: float = 0.0):
+    """Inverse of :func:`samples_to_seconds`, rounded to the nearest sample.
+
+    Returns a Python ``int`` for scalar input and an integer array otherwise.
+    """
+    samples = np.round((np.asarray(seconds, dtype=float) - first_time) * fs)
+    samples = samples.astype(int)
+    return samples.item() if samples.ndim == 0 else samples
+
+
 class StimArtefactViewer(EphysViewer):
     request_jump_to_time = QtCore.Signal(float)
 
-    def __init__(self, events_path: str | Path, fs, *args, **kwargs) -> None:
+    def __init__(
+        self, events_path: str | Path, fs, first_time: float = 0.0, *args, **kwargs
+    ) -> None:
         super().__init__(*args, **kwargs)
 
         self.fs = fs
+        # Timestamp of sample 0; the events file stores sample indices, which
+        # map onto the recording time axis as ``sample / fs + first_time``.
+        self.first_time = first_time
         self.extend_gui()
         self._event_regions: list[pg.LinearRegionItem] = []
         self._visible_event_indices: list[int] = []
@@ -59,9 +84,15 @@ class StimArtefactViewer(EphysViewer):
 
     def _get_event_times(self, ev_idx: int) -> tuple[float, float]:
         event = self.events.loc[ev_idx]
-        start_time = float(event["start_sample"]) / self.fs
-        stop_time = float(event["end_sample"]) / self.fs
+        start_time = self._samples_to_seconds(float(event["start_sample"]))
+        stop_time = self._samples_to_seconds(float(event["end_sample"]))
         return start_time, stop_time
+
+    def _samples_to_seconds(self, samples):
+        return samples_to_seconds(samples, self.fs, self.first_time)
+
+    def _seconds_to_samples(self, seconds):
+        return seconds_to_samples(seconds, self.fs, self.first_time)
 
     def update_snapshot(self):
         self.events_snapshots.append(
@@ -103,8 +134,8 @@ class StimArtefactViewer(EphysViewer):
             self.update_widgets_after_time_change(*self._get_event_times(ev_idx))
             return False
 
-        start_sample = int(round(start_time * self.fs))
-        end_sample = int(round(stop_time * self.fs))
+        start_sample = self._seconds_to_samples(start_time)
+        end_sample = self._seconds_to_samples(stop_time)
         if start_sample >= end_sample:
             self.update_widgets_after_time_change(*self._get_event_times(ev_idx))
             return False
@@ -112,8 +143,8 @@ class StimArtefactViewer(EphysViewer):
         self.events.loc[ev_idx, "start_sample"] = start_sample
         self.events.loc[ev_idx, "end_sample"] = end_sample
         self.update_widgets_after_time_change(
-            start_sample / self.fs,
-            end_sample / self.fs,
+            self._samples_to_seconds(start_sample),
+            self._samples_to_seconds(end_sample),
             region=region,
             region_controls=region_controls,
         )
@@ -212,8 +243,8 @@ class StimArtefactViewer(EphysViewer):
         mid_time = (xmin + xmax) / 2
         half_width = (xmax - xmin) * 0.01
 
-        start_sample = int(round((mid_time - half_width) * self.fs))
-        end_sample = int(round((mid_time + half_width) * self.fs))
+        start_sample = self._seconds_to_samples(mid_time - half_width)
+        end_sample = self._seconds_to_samples(mid_time + half_width)
         if end_sample <= start_sample:
             end_sample = start_sample + 1
 
@@ -271,6 +302,7 @@ class StimArtefactViewer(EphysViewer):
         fs: float,
         events_path: str | Path,
         title=None,
+        first_time: float = 0.0,
     ) -> EphysViewer:
         ev = next(
             filter(
@@ -281,7 +313,7 @@ class StimArtefactViewer(EphysViewer):
         )
         if ev is None:
             ev = StimArtefactViewer(
-                fs=fs, events_path=events_path
+                fs=fs, events_path=events_path, first_time=first_time
             )  # maybe set this like data?
             ev.setWindowTitle(title)
 
@@ -325,8 +357,8 @@ class StimArtefactViewer(EphysViewer):
         view_stop = float(self.model.t0 + self.model.ns * self.model.si)
 
         # The events file stores stim samples; convert to seconds for the time axis.
-        start_s = self.events["start_sample"] / self.fs
-        stop_s = self.events["end_sample"] / self.fs
+        start_s = self._samples_to_seconds(self.events["start_sample"])
+        stop_s = self._samples_to_seconds(self.events["end_sample"])
         visible = self.events[(start_s >= view_start) & (stop_s <= view_stop)]
 
         if visible.empty:
@@ -335,8 +367,8 @@ class StimArtefactViewer(EphysViewer):
         for event_idx, event in visible.iterrows():
             region = pg.LinearRegionItem(
                 values=(
-                    float(event["start_sample"]) / self.fs,
-                    float(event["end_sample"]) / self.fs,
+                    self._samples_to_seconds(float(event["start_sample"])),
+                    self._samples_to_seconds(float(event["end_sample"])),
                 ),
                 orientation="vertical",
                 movable=False,
@@ -360,10 +392,8 @@ class StimArtefactViewer(EphysViewer):
     def move_to_region(self, new_region_idx: int) -> None:
         if new_region_idx not in self._visible_event_indices:
             event = self.events.loc[new_region_idx]
-            midpoint = (
-                (float(event["start_sample"]) + float(event["end_sample"]))
-                / 2
-                / self.fs
+            midpoint = self._samples_to_seconds(
+                (float(event["start_sample"]) + float(event["end_sample"])) / 2
             )
 
             self._set_event_combo_index(new_region_idx)
@@ -807,6 +837,7 @@ def stim_artefact_viewer(
     events_path: str | Path | None = None,
     title: str = "ephys",
     t0: float = 0.0,
+    first_time: float = 0.0,
     t_scalar: float = T_SCALAR,
     a_scalar: float = A_SCALAR,
     colormap: str | pg.ColorMap | matplotlib.colors.Colormap | None = None,
@@ -814,7 +845,9 @@ def stim_artefact_viewer(
 ) -> StimArtefactViewer:
     create_app()
     # we need the fs upfront here to convert samples in events to time
-    ev = StimArtefactViewer._get_or_create(fs=fs, events_path=events_path, title=title)
+    ev = StimArtefactViewer._get_or_create(
+        fs=fs, events_path=events_path, title=title, first_time=first_time
+    )
 
     if channels is None:
         channels = trace_header(version=1)
