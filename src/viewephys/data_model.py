@@ -173,9 +173,6 @@ class SpikeGLXDataModel(AbstractDataModel):
         return self.sr.range_volts[0] * 1e6
 
 
-# TODO: check for probegroup, not sure we can support at this stage
-
-
 class SpikeInterfaceDataModel(AbstractDataModel):
     def __init__(self, recordings_dict):
         self.recordings_dict = recordings_dict
@@ -220,11 +217,8 @@ class SpikeInterfaceDataModel(AbstractDataModel):
         num_channels = self.first_recording.get_num_channels()
 
         # Handle the case where no channel locations can be found
-        try:
-            self.first_recording.get_channel_locations()
-        except Exception:
+        if not self._has_channel_locations(self.first_recording):
             geom = {"trace": np.arange(num_channels)}
-            return geom
 
         # Handle the second case, where channel locations are found
         # but the recording does not have a probe attached
@@ -333,6 +327,13 @@ class SpikeInterfaceDataModel(AbstractDataModel):
 
     def perform_checks_on_recordings(self):  # noqa
         """ """
+        if len(self.first_recording.get_probegroup().probes) > 1:
+            raise NotImplementedError(
+                "Multi-probe recordings are not supported yet. "
+                "Please raise an issue on the viewephys GitHub "
+                "if you would like to see this implemented."
+            )
+
         first_has_locations = self._has_channel_locations(self.first_recording)
         has_probe = self.first_recording.has_probe()
 
