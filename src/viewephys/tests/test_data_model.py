@@ -12,8 +12,9 @@ from spikeglx import Reader, _mock_spikeglx_file
 from viewephys.data_model import SpikeGLXDataModel, SpikeInterfaceDataModel
 
 
-class TestDataModel:
-    def test_SpikeGLXDataModelr(self, tmp_path):
+class TestSpikeGLXDataModel:
+
+    def test_spikeglx_mode(self, tmp_path):
         """Simple pass-through checks for the wrapped SpikeGLX reader."""
         meta_path = tmp_path / "my_bin_file.bin"
         bin_path = Path(__file__).parent / "mock_data" / "meta_file.meta"
@@ -76,6 +77,8 @@ class TestDataModel:
         )
 
         # Filtering alone is not tested.
+
+class SpikeInterfaceDataModel:
 
     def test_spikeinterface_no_channel_locs(self):
         """
