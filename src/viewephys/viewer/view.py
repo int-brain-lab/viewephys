@@ -181,20 +181,32 @@ class Ui_MainWindow:
         self.actionopen.setObjectName("actionopen")
 
         self.actionColormap_CET_L2 = QtWidgets.QAction(self)
-        self.actionColormap_CET_L2.setText("CET_L2")
+        self.actionColormap_CET_L2.setText("CET-L2")
         self.actionColormap_CET_L2.setObjectName("actionColormap_CET_L2")
 
         self.actionColormap_MPL_PuOr = QtWidgets.QAction(self)
-        self.actionColormap_MPL_PuOr.setText("MPL_PuOr")
+        self.actionColormap_MPL_PuOr.setText("PuOr")
         self.actionColormap_MPL_PuOr.setObjectName("actionColormap_MPL_PuOr")
 
         self.actionColormap_CET_D1 = QtWidgets.QAction(self)
-        self.actionColormap_CET_D1.setText("CET_D1")
+        self.actionColormap_CET_D1.setText("CET-D1")
         self.actionColormap_CET_D1.setObjectName("actionColormap_CET_D1")
+        self.actionColormap_CET_D1.setCheckable(True)
+        self.actionColormap_CET_D1.setChecked(True)
 
         self.actionColormap_CET_D6 = QtWidgets.QAction(self)
-        self.actionColormap_CET_D6.setText("CET_D6")
+        self.actionColormap_CET_D6.setText("CET-D6")
         self.actionColormap_CET_D6.setObjectName("actionColormap_CET_D6")
+        self.actionColormap_CET_D6.setCheckable(True)
+
+        self.actionColormap_CET_L2.setCheckable(True)
+        self.actionColormap_MPL_PuOr.setCheckable(True)
+
+        self.actionAutoDownsample = QtWidgets.QAction(self)
+        self.actionAutoDownsample.setCheckable(True)
+        self.actionAutoDownsample.setChecked(True)
+        self.actionAutoDownsample.setText("Auto Downsample")
+        self.actionAutoDownsample.setObjectName("actionAutoDownsample")
 
         self.menufile.addAction(self.actionopen)
         self.menuColormaps.addAction(self.actionColormap_CET_L2)
@@ -203,6 +215,7 @@ class Ui_MainWindow:
         self.menuColormaps.addAction(self.actionColormap_CET_D6)
 
         self.menuView.addAction(self.menuColormaps.menuAction())
+        self.menuView.addAction(self.actionAutoDownsample)
         self.menubar.addAction(self.menufile.menuAction())
         self.menubar.addAction(self.menuView.menuAction())
         QtCore.QMetaObject.connectSlotsByName(self)
