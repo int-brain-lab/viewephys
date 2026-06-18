@@ -329,12 +329,23 @@ class _RampArraySR(_FakeArraySR):
         return np.tile(samples[:, np.newaxis], (1, n_channels))
 
 
+class _RandomArraySR(_FakeArraySR):
+    """Array reader backed by a fixed random recording so the displayed chunk
+    can be compared against the underlying data."""
+
+    def __init__(self):
+        self.recording = np.random.randn(self.ns, self.nc).astype(np.float32)
+
+    def __getitem__(self, key):
+        return self.recording[key]
+
+
 def test_window_size_change_displays_different_data(qtbot, monkeypatch):
-    """Changing the window size must reload and display a different window of
-    data (a different extent of samples) in the spawned viewer."""
+    """Changing the window size must reload and display the matching chunk of
+    the underlying recording in the spawned viewer."""
     window = EphysBinViewer()
     qtbot.addWidget(window)
-    window.sr = _RampArraySR()
+    window.sr = _RandomArraySR()
     window.update_slider_limits()
     window.lineEdit_windowSize.setEnabled(True)
     window.update_window_lineedit()
@@ -350,21 +361,22 @@ def test_window_size_change_displays_different_data(qtbot, monkeypatch):
 
     monkeypatch.setattr("viewephys.gui.viewephys", fake_viewephys)
 
-    # Display a 0.10 s window of data.
+    nc = window.sr.nc - window.sr.nsync
+
+    # Display a 0.10 s window and check it matches the underlying chunk.
     window.lineEdit_windowSize.setText("0.10")
     window.on_lineEdit_windowSizeChanged()
-    first_data = captured["data"].copy()
-    assert first_data.shape[1] == int(round(0.10 * window.sr.fs))
+    n0 = window.window_length_n
+    expected0 = window.sr.recording[0:n0, :nc].T
+    np.testing.assert_array_equal(captured["data"], expected0)
 
-    # Change the window: a wider window must display a different (larger) set of
-    # samples than before.
+    # A wider window must display a different, larger chunk of the recording.
     window.lineEdit_windowSize.setText("0.20")
     window.on_lineEdit_windowSizeChanged()
-    second_data = captured["data"].copy()
-    assert second_data.shape[1] == int(round(0.20 * window.sr.fs))
-    assert second_data.shape[1] != first_data.shape[1]
-    # The second window reaches samples that the first window never displayed.
-    assert second_data[0].max() > first_data[0].max()
+    n1 = window.window_length_n
+    expected1 = window.sr.recording[0:n1, :nc].T
+    np.testing.assert_array_equal(captured["data"], expected1)
+    assert captured["data"].shape[1] == n1 != n0
 
     window.close()
     window.deleteLater()
