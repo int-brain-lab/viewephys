@@ -51,18 +51,31 @@ def test_gain_edit_updates(view_with_data, qtbot):
     window = view_with_data
     window.lineEdit_gain_density.setText("6")
     qtbot.keyPress(window.lineEdit_gain_density, QtCore.Qt.Key_Return)
+    assert window.ctrl is window._ctrl_image
+    assert window.ctrl.gain == pytest.approx(6.0)
+    assert window._ctrl_image.gain == pytest.approx(6.0)
+
     qtbot.mouseClick(window.radio_wiggle, QtCore.Qt.LeftButton)
     window.lineEdit_gain_wiggle.setText("12")
     qtbot.keyPress(window.lineEdit_gain_wiggle, QtCore.Qt.Key_Return)
+    assert window.ctrl is window._ctrl_wiggle
+    assert window.ctrl.gain == pytest.approx(12.0)
+    assert window._ctrl_wiggle.gain == pytest.approx(12.0)
+    assert window._ctrl_image.gain == pytest.approx(6.0)
+
     assert float(window.lineEdit_gain_density.text()) == 6.0
     assert float(window.lineEdit_gain_wiggle.text()) == 12.0
 
     qtbot.mouseClick(window.radio_density, QtCore.Qt.LeftButton)
     assert window.stackedWidget_gain.currentWidget() is window.page_gain_density
+    assert window.ctrl is window._ctrl_image
+    assert window.ctrl.gain == pytest.approx(6.0)
     assert float(window.lineEdit_gain_density.text()) == 6.0
 
     qtbot.mouseClick(window.radio_wiggle, QtCore.Qt.LeftButton)
     assert window.stackedWidget_gain.currentWidget() is window.page_gain_wiggle
+    assert window.ctrl is window._ctrl_wiggle
+    assert window.ctrl.gain == pytest.approx(12.0)
     assert float(window.lineEdit_gain_wiggle.text()) == 12.0
 
 
