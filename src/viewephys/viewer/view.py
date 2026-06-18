@@ -131,7 +131,6 @@ class Ui_MainWindow:
         self.radio_density.setObjectName("radio_density")
         self.radio_wiggle = QtWidgets.QRadioButton("Wiggle", self.widget_display_mode)
         self.radio_wiggle.setObjectName("radio_wiggle")
-        self._set_display_mode_tooltips()
         self.radio_density.setChecked(True)
         self.displayModeGroup = QtWidgets.QButtonGroup(self.frame_seismic)
         self.displayModeGroup.setExclusive(True)
@@ -207,10 +206,3 @@ class Ui_MainWindow:
         self.menubar.addAction(self.menufile.menuAction())
         self.menubar.addAction(self.menuView.menuAction())
         QtCore.QMetaObject.connectSlotsByName(self)
-
-    def _set_display_mode_tooltips(self):
-        self.radio_density.setToolTip(
-            "Density view: render the data as a colour-mapped image, "
-            "with amplitude shown as colour intensity."
-        )
-        self.radio_wiggle.setToolTip("Draw each channel as its own stacked trace. ")

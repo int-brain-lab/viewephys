@@ -655,8 +655,10 @@ class ControllerWiggle(Controller):
         if self.model.taxis == 0:
             xlim, ylim = (tlim, clim)
             wiggle_y = np.r_[self.model.data, np.ones(self.model.ntr)[np.newaxis, :]]
-            wiggle_y = wiggle_y / (10 ** (self.gain / 20))
-            wiggle_y += np.arange(self.model.ntr)[np.newaxis, :]
+            wiggle_y = (
+                wiggle_y / (10 ** (self.gain / 20))
+                + np.arange(self.model.ntr)[np.newaxis, :]
+            )
 
             self.view.plotDataItem_wiggle.setData(
                 x=np.tile(np.r_[self.tscale, np.nan], self.model.ntr),
@@ -666,7 +668,7 @@ class ControllerWiggle(Controller):
             xlim, ylim = (clim, tlim)
         else:
             raise ValueError("taxis must be 0 (horizontal axis) or 1 (vertical axis)")
-        if tlim is not None and clim is not None:  # TOASK: what case is this?
+        if tlim is not None and clim is not None:
             self.view.plotItem_header_h.setLimits(xMin=xlim[0], xMax=xlim[1])
             self.view.plotItem_header_v.setLimits(yMin=ylim[0], yMax=ylim[1])
             self.view.plotItem_seismic.setLimits(
