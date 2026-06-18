@@ -39,7 +39,7 @@ jobs:
           - {os: windows-latest, python-version: "3.12", qt-backend: pyside6}
           - {os: macos-latest,   python-version: "3.12", qt-backend: pyqt5}
           - {os: macos-latest,   python-version: "3.12", qt-backend: pyside6}
-                  
+
     steps:
       - uses: actions/checkout@v4
 
