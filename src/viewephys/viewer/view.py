@@ -131,15 +131,6 @@ class Ui_MainWindow:
         self.radio_density.setObjectName("radio_density")
         self.radio_wiggle = QtWidgets.QRadioButton("Wiggle", self.widget_display_mode)
         self.radio_wiggle.setObjectName("radio_wiggle")
-        self.checkbox_auto_space_wiggle = QtWidgets.QCheckBox(
-            "Auto-space", self.widget_display_mode
-        )
-        self.checkbox_auto_space_wiggle.setObjectName("checkBox_wiggle_autospace")
-        self.checkbox_auto_space_wiggle.setChecked(False)
-        self.checkbox_auto_space_wiggle.setEnabled(False)
-        self.checkbox_auto_space_wiggle.setStyleSheet(
-            "margin-top: 2px; margin-left: 4px;"
-        )
         self._set_display_mode_tooltips()
         self.radio_density.setChecked(True)
         self.displayModeGroup = QtWidgets.QButtonGroup(self.frame_seismic)
@@ -148,7 +139,6 @@ class Ui_MainWindow:
         self.displayModeGroup.addButton(self.radio_wiggle)
         self.vbox_display_mode.addWidget(self.radio_density)
         self.vbox_display_mode.addWidget(self.radio_wiggle)
-        self.vbox_display_mode.addWidget(self.checkbox_auto_space_wiggle)
         self.gridLayout_2.addWidget(self.widget_display_mode, 3, 0, 1, 2)
         spacer_item_3 = QtWidgets.QSpacerItem(
             20, 40, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding
@@ -224,8 +214,3 @@ class Ui_MainWindow:
             "with amplitude shown as colour intensity."
         )
         self.radio_wiggle.setToolTip("Draw each channel as its own stacked trace. ")
-        self.checkbox_auto_space_wiggle.setToolTip(
-            "Scale the spacing between wiggle traces by the "
-            "widest trace so high-amplitude channels don't overlap their "
-            "neighbours. Note gain values are no longer accurate."
-        )
