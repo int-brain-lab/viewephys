@@ -83,9 +83,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
         self.data: SpikeGLXDataModel | SpikeInterfaceDataModel
 
-        if (
-            bin_file is not None
-        ):  # TODO: this should not guard because open_file accepts None?
+        if bin_file is not None:
             self.open_file(file=bin_file)  # set self.data
             self._setup_viewers_and_checkboxes()
             self._setup_slider()
@@ -158,6 +156,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.viewers: dict[str, EphysViewer | None]
 
         if isinstance(self.data, SpikeGLXDataModel):
+            # If SpikeGLXDataModel is used, then offer the
+            # preprocessing options from the IBL
             self.viewers = {
                 "butterworth": None,
                 "destripe": None,
@@ -171,6 +171,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 "raw": self.cb_raw_ap,
             }
         else:
+            # Otherwise, if the data is a dict of spikeinterface
+            # recordings, hide the existing checkboxes and
+            # populate with the recording dict keys defined by the user
             for cb in [
                 self.cb_raw_ap,
                 self.cb_butterworth_ap,
@@ -189,7 +192,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 self.cbs[step] = cb
 
     def _create_top_label(self):
-        """"""
+        """Create the label of recording details shown on the main window."""
         file_path = self.data.get_file_path()
         file_path_label = f"{file_path} \n \n" if file_path else ""
 
