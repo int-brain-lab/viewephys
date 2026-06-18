@@ -219,6 +219,7 @@ class SpikeInterfaceDataModel(AbstractDataModel):
         # Handle the case where no channel locations can be found
         if not self._has_channel_locations(self.first_recording):
             geom = {"trace": np.arange(num_channels)}
+            return geom
 
         # Handle the second case, where channel locations are found
         # but the recording does not have a probe attached
@@ -255,7 +256,6 @@ class SpikeInterfaceDataModel(AbstractDataModel):
             "shank": probe.shank_ids.astype(int),
             "x": positions[:, 0],
             "y": positions[:, 1],
-            # TODO: we have no flag yet. We can look for it on the SI recording
             "col": col,
             "row": row.astype(int),
         }
@@ -327,17 +327,19 @@ class SpikeInterfaceDataModel(AbstractDataModel):
 
     def perform_checks_on_recordings(self):  # noqa
         """ """
-        if len(self.first_recording.get_probegroup().probes) > 1:
+        first_has_locations = self._has_channel_locations(self.first_recording)
+        has_probe = self.first_recording.has_probe()
+
+        if has_probe and len(self.first_recording.get_probegroup().probes) > 1:
+            # We do not currently support multiple probes.
             raise NotImplementedError(
                 "Multi-probe recordings are not supported yet. "
                 "Please raise an issue on the viewephys GitHub "
                 "if you would like to see this implemented."
             )
 
-        first_has_locations = self._has_channel_locations(self.first_recording)
-        has_probe = self.first_recording.has_probe()
-
-        # Perform checks that all recordings are comparable and supported.
+        # First, check that recordings and not multi segment and that
+        # all recordings either have channel locations / probes or do not.
         for key in list(self.recordings_dict.keys())[1:]:
             rec = self.recordings_dict[key]
 
@@ -367,7 +369,7 @@ class SpikeInterfaceDataModel(AbstractDataModel):
                     "of them."
                 )
 
-        # Validate basic properties
+        # Validate that all recordings match on basic acquisition properties.
         first_sampling_frequency = self.first_recording.get_sampling_frequency()
         first_num_samples = self.first_recording.get_num_samples(segment_index=0)
         first_gains = self.first_recording.get_channel_gains()
@@ -417,6 +419,7 @@ class SpikeInterfaceDataModel(AbstractDataModel):
                     f"{self.first_key}."
                 )
 
+            # Check that if the recordings have channel locations, they match
             if first_has_locations and not np.array_equal(
                 self.first_recording.get_channel_locations(),
                 rec.get_channel_locations(),
@@ -426,6 +429,7 @@ class SpikeInterfaceDataModel(AbstractDataModel):
                     f"and {key} do not match."
                 )
 
+            # Check that if the recordings have a probe, they match
             if has_probe:
                 rec_probe = rec.get_probe()
                 first_probe = self.first_recording.get_probe()
