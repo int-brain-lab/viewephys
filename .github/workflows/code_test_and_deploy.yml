@@ -21,7 +21,7 @@ jobs:
 
     defaults:
       run:
-        shell: bash -l {0}
+        shell: bash {0}
 
     strategy:
       matrix:
@@ -46,14 +46,14 @@ jobs:
       - name: Install viewephys from repo
         run: |
           python -m pip install --upgrade pip
-          pip install .[dev,${{ matrix.qt-backend }}]
+          python -m pip install .[dev,${{ matrix.qt-backend }}]
 
       - name: Run tests
         env:
           QT_QPA_PLATFORM: offscreen
           MPLCONFIGDIR: /tmp/matplotlib
         run: |
-          pytest
+          python -m pytest
 
 #  build_sdist_wheels:
 #    name: Build source distribution
