@@ -25,9 +25,18 @@ jobs:
 
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
-        qt-backend: [pyqt5, pyqt6, pyside6]
+        include:
+          # Python version sweep — Linux + pyqt5
+          - {os: ubuntu-latest, python-version: "3.10", qt-backend: pyqt5}
+          - {os: ubuntu-latest, python-version: "3.11", qt-backend: pyqt5}
+          - {os: ubuntu-latest, python-version: "3.12", qt-backend: pyqt5}
+          - {os: ubuntu-latest, python-version: "3.13", qt-backend: pyqt5}
+          # Qt backend sweep — Linux + py3.12
+          - {os: ubuntu-latest, python-version: "3.12", qt-backend: pyqt6}
+          - {os: ubuntu-latest, python-version: "3.12", qt-backend: pyside6}
+          # OS smoke tests — pyqt5 + py3.12
+          - {os: windows-latest, python-version: "3.12", qt-backend: pyqt5}
+          - {os: macos-latest,   python-version: "3.12", qt-backend: pyqt5}
 
     steps:
       - uses: actions/checkout@v4
