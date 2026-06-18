@@ -668,11 +668,15 @@ class ControllerImage(Controller):
         if self.model.taxis == 0:
             xlim, ylim = (tlim, clim)
             transform = [si, 0.0, 0.0, 0.0, 1, 0.0, t0 - si / 2, x0 - 0.5, 1.0]
-            self.view.imageItem_seismic.setImage(self.model.data[:, self.trace_indices])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[:, self.trace_indices], autoDownsample=True
+            )
         elif self.model.taxis == 1:
             xlim, ylim = (clim, tlim)
             transform = [1.0, 0.0, 0.0, 0.0, si, 0.0, x0 - 0.5, t0 - si / 2, 1.0]
-            self.view.imageItem_seismic.setImage(self.model.data[self.trace_indices, :])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[self.trace_indices, :], autoDownsample=True
+            )
             self.view.plotItem_seismic.invertY()
         else:
             raise ValueError("taxis must be 0 (horizontal axis) or 1 (vertical axis)")
@@ -690,18 +694,24 @@ class ControllerImage(Controller):
 
     def redraw(self):
         if self.model.taxis == 1:
-            self.view.imageItem_seismic.setImage(self.model.data[self.trace_indices, :])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[self.trace_indices, :], autoDownsample=True
+            )
         elif self.model.taxis == 0:
-            self.view.imageItem_seismic.setImage(self.model.data[:, self.trace_indices])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[:, self.trace_indices], autoDownsample=True
+            )
         self.set_header()
         self.set_gain()
 
     def set_gain(self, gain=None):
+        #  self.view.imageItem_seismic.setAutoLevels(True)
+        # self.view.imageItem_seismic.setAutoDownsample(False)
         if gain is None:
             gain = self.gain
         levels = 10 ** (gain / 20) * 4 * np.array([-1, 1])
-        self.view.imageItem_seismic.setLevels(levels)
-        self.view.lineEdit_gain.setText(f"{gain:.1f}")
+        self.view.imageItem_seismic.setLevels(levels, update=True)
+        self.view.lineEdit_gain.setText(f"{gain:.3f}")
 
 
 def viewseis(w=None, si=0.002, h=None, title=None, t0=0, x0=0, taxis=1):
