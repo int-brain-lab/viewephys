@@ -374,12 +374,12 @@ def test_window_size_change_displays_different_data(qtbot):
     window.deleteLater()
 
 
-def test_auto_downsample_false_by_default(view_with_data):
-    """Auto downsample is off by default, so the image item must not downsample."""
+def test_auto_downsample_true_by_default(view_with_data):
+    """Auto downsample is on by default, so the image item must downsample."""
     window = view_with_data
-    assert window.actionAutoDownsample.isChecked() is False
-    assert window._auto_downsample is False
-    assert window.imageItem_seismic.autoDownsample is False
+    assert window.actionAutoDownsample.isChecked() is True
+    assert window._auto_downsample is True
+    assert window.imageItem_seismic.autoDownsample is True
 
 
 def test_auto_downsample_toggles_view_item(view_with_data):
@@ -387,10 +387,10 @@ def test_auto_downsample_toggles_view_item(view_with_data):
     window = view_with_data
     assert window._display_mode == "density"
 
-    window.actionAutoDownsample.setChecked(True)
-    assert window._auto_downsample is True
-    assert window.imageItem_seismic.autoDownsample is True
-
     window.actionAutoDownsample.setChecked(False)
     assert window._auto_downsample is False
     assert window.imageItem_seismic.autoDownsample is False
+
+    window.actionAutoDownsample.setChecked(True)
+    assert window._auto_downsample is True
+    assert window.imageItem_seismic.autoDownsample is True
