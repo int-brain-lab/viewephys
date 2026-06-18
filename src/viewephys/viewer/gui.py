@@ -96,7 +96,7 @@ class Model:
         return np.arange(self.ns) * self.si + self.t0
 
 
-class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
+class EasyQC(QtWidgets.QMainWindow):
     """Reusable seismic-style viewer used by viewephys."""
 
     model: Model
@@ -134,6 +134,10 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
+
         self.layers = {}
         self.model = Model(None, None)
         self._display_mode = DISPLAY_MODE_DENSITY
@@ -177,6 +181,9 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
 
         # Keep the top strip x-linked, but hide its duplicate x-axis.
         self.plotItem_header_h.getPlotItem().hideAxis("bottom")
+        # Give the right-side header the same label height as the seismic bottom axis
+        # so its ViewBox stays flush with the seismic display.
+        self.plotItem_header_v.getAxis("bottom").setLabel(" ")
 
         self.hoverPlotWidgets = {"Trace": None, "Spectrum": None, "Spectrogram": None}
         scene = self.viewBox_seismic.scene()
@@ -187,7 +194,7 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
         self.lineEdit_gain_density.returnPressed.connect(self.editGain)
         self.lineEdit_gain_wiggle.returnPressed.connect(self.editGain)
         self.lineEdit_sort.returnPressed.connect(self.editSort)
-        self.comboBox_header.activated[str].connect(self.ctrl.set_header)
+        self.comboBox_header.currentTextChanged.connect(self.ctrl.set_header)
         self.viewBox_seismic.sigRangeChanged.connect(self.on_sigRangeChanged)
         self.horizontalScrollBar.valueChanged.connect(self.on_horizontalSliderChange)
         self.verticalScrollBar.valueChanged.connect(self.on_verticalSliderChange)
