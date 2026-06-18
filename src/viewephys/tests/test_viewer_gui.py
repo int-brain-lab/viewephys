@@ -312,3 +312,81 @@ def test_script_api_viewephys(qtbot, synthetic_seis):
     qtbot.addWidget(window)
     assert window is not None
     window.close()
+
+
+class _RampArraySR(_FakeArraySR):
+    """Array reader returning a per-sample ramp so the displayed window of data
+    is identifiable by its sample indices."""
+
+    def __getitem__(self, key):
+        sample_slice, channel_slice = key
+        first = 0 if sample_slice.start is None else sample_slice.start
+        last = self.ns if sample_slice.stop is None else sample_slice.stop
+        first_channel = 0 if channel_slice.start is None else channel_slice.start
+        last_channel = self.nc if channel_slice.stop is None else channel_slice.stop
+        n_channels = last_channel - first_channel
+        samples = np.arange(first, last, dtype=np.float32)
+        return np.tile(samples[:, np.newaxis], (1, n_channels))
+
+
+def test_window_size_change_displays_different_data(qtbot, monkeypatch):
+    """Changing the window size must reload and display a different window of
+    data (a different extent of samples) in the spawned viewer."""
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+    window.sr = _RampArraySR()
+    window.update_slider_limits()
+    window.lineEdit_windowSize.setEnabled(True)
+    window.update_window_lineedit()
+    for checkbox in window.cbs.values():
+        checkbox.setChecked(False)
+    window.cbs["raw"].setChecked(True)
+
+    captured = {}
+
+    def fake_viewephys(data, fs, channels=None, title="ephys", t0=0.0, **kwargs):
+        captured["data"] = np.asarray(data)
+        return _FakeViewer(xlim=[t0, t0 + data.shape[1] / fs])
+
+    monkeypatch.setattr("viewephys.gui.viewephys", fake_viewephys)
+
+    # Display a 0.10 s window of data.
+    window.lineEdit_windowSize.setText("0.10")
+    window.on_lineEdit_windowSizeChanged()
+    first_data = captured["data"].copy()
+    assert first_data.shape[1] == int(round(0.10 * window.sr.fs))
+
+    # Change the window: a wider window must display a different (larger) set of
+    # samples than before.
+    window.lineEdit_windowSize.setText("0.20")
+    window.on_lineEdit_windowSizeChanged()
+    second_data = captured["data"].copy()
+    assert second_data.shape[1] == int(round(0.20 * window.sr.fs))
+    assert second_data.shape[1] != first_data.shape[1]
+    # The second window reaches samples that the first window never displayed.
+    assert second_data[0].max() > first_data[0].max()
+
+    window.close()
+    window.deleteLater()
+
+
+def test_auto_downsample_false_by_default(view_with_data):
+    """Auto downsample is off by default, so the image item must not downsample."""
+    window = view_with_data
+    assert window.actionAutoDownsample.isChecked() is False
+    assert window._auto_downsample is False
+    assert window.imageItem_seismic.autoDownsample is False
+
+
+def test_auto_downsample_toggles_view_item(view_with_data):
+    """Toggling the View menu item flips the image item's autoDownsample flag."""
+    window = view_with_data
+    assert window._display_mode == "density"
+
+    window.actionAutoDownsample.setChecked(True)
+    assert window._auto_downsample is True
+    assert window.imageItem_seismic.autoDownsample is True
+
+    window.actionAutoDownsample.setChecked(False)
+    assert window._auto_downsample is False
+    assert window.imageItem_seismic.autoDownsample is False

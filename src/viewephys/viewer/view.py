@@ -204,7 +204,7 @@ class Ui_MainWindow:
 
         self.actionAutoDownsample = QtWidgets.QAction(self)
         self.actionAutoDownsample.setCheckable(True)
-        self.actionAutoDownsample.setChecked(True)
+        self.actionAutoDownsample.setChecked(False)
         self.actionAutoDownsample.setText("Auto Downsample")
         self.actionAutoDownsample.setObjectName("actionAutoDownsample")
 
