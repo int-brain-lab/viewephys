@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from qtpy import QtCore, QtWidgets
 
+from viewephys.data_model import SpikeGLXDataModel
 from viewephys.gui import A_SCALAR, EphysBinViewer, create_app, viewephys
 from viewephys.tests.test_viewer_helpers import synthetic_seismic_data
 from viewephys.viewer.gui import EasyQC, viewseis
@@ -64,6 +65,40 @@ def test_toggle_density_wiggle(view_with_data, qtbot):
     assert window.imageItem_seismic.image is None
     qtbot.mouseClick(window.radio_density, QtCore.Qt.LeftButton)
     assert window._display_mode == "density"
+
+
+def test_sort_reorders_plotted_image_multiple_keys(view_with_data):
+    """Sorting by multiple keys should reorder the plotted image
+    without mutating the header.
+    """
+    window = view_with_data
+    original_header = {
+        key: values.copy() for key, values in window.model.header.items()
+    }
+    keys = ["receiver_number", "receiver_line"]
+    expected_indices = np.lexsort(
+        [window.model.header["receiver_number"], window.model.header["receiver_line"]]
+    )
+    expected_image = window.model.data[expected_indices, :]
+
+    window.ctrl.sort(keys)
+
+    np.testing.assert_array_equal(window.ctrl.trace_indices, expected_indices)
+    np.testing.assert_array_equal(window.imageItem_seismic.image, expected_image)
+    for key, original_values in original_header.items():
+        np.testing.assert_array_equal(window.model.header[key], original_values)
+
+
+def test_sort_reorders_plotted_image_descending(view_with_data):
+    """Descending sort should reorder the plotted image."""
+    window = view_with_data
+    expected_indices = np.lexsort([-window.model.header["receiver_number"]])
+    expected_image = window.model.data[expected_indices, :]
+
+    window.ctrl.sort(["!receiver_number"])
+
+    np.testing.assert_array_equal(window.ctrl.trace_indices, expected_indices)
+    np.testing.assert_array_equal(window.imageItem_seismic.image, expected_image)
 
 
 class _FakeSR:
@@ -158,8 +193,8 @@ def _centered_first_sample(typed_seconds, fs, ns, window_length_n):
 def jump_window(qtbot, monkeypatch):
     window = EphysBinViewer()
     qtbot.addWidget(window)
-    window.sr = _FakeSR()
-    slider_max = int(np.floor(window.sr.ns / window.window_length_n))
+    window.data = SpikeGLXDataModel(_FakeSR())
+    slider_max = int(np.floor(window.data.get_num_samples() / window.window_length_n))
     window.horizontalSlider.setMaximum(slider_max)
     window.horizontalSlider.setEnabled(True)
     window.lineEdit_jumpTime.setEnabled(True)
@@ -182,9 +217,9 @@ def test_jump_to_time_loads_exact_sample(jump_window, qtbot, typed_seconds):
     """Jump-to should center the window on the requested sample, while
     parking the slider near the loaded window for visual feedback only."""
     window = jump_window
-    fs = window.sr.fs
+    fs = window.data.get_sampling_frequency()
     expected_first = _centered_first_sample(
-        typed_seconds, fs, window.sr.ns, window.window_length_n
+        typed_seconds, fs, window.data.get_num_samples(), window.window_length_n
     )
     expected_slider = max(
         0,
@@ -209,7 +244,7 @@ def test_jump_to_time_non_chunk_aligned(jump_window, qtbot):
     window.lineEdit_jumpTime.setText("500.150")
     window.on_jumpToTimeRequested()
 
-    requested_sample = int(round(500.150 * window.sr.fs))
+    requested_sample = int(round(500.150 * window.data.get_sampling_frequency()))
     assert window._first_sample + window.window_length_n // 2 == requested_sample
     assert window._first_sample == 14_999_500
     assert window.horizontalSlider.value() == 1500
@@ -228,13 +263,14 @@ def test_slider_drag_resets_first_sample_to_chunk(jump_window, qtbot):
     window.horizontalSlider.setValue(1501)
     assert window._first_sample == 1501 * window.window_length_n
     assert window.lineEdit_jumpTime.text() == (
-        f"{1501 * window.window_length_n / window.sr.fs:0.6f}"
+        f"{1501 * window.window_length_n / window.data.get_sampling_frequency():0.6f}"
     )
 
 
 def test_jump_to_time_clamps_out_of_range(jump_window, qtbot):
     window = jump_window
-    max_first = max(0, int(window.sr.ns) - window.window_length_n)
+    max_first = max(0, int(window.data.get_num_samples()) - window.window_length_n)
+
     expected_slider_high = max(
         0,
         min(
@@ -270,9 +306,9 @@ def test_jump_to_time_recenters_existing_zoom(qtbot, monkeypatch):
     """Reloaded viewers should keep zoom width and recenter on the jump time."""
     window = EphysBinViewer()
     qtbot.addWidget(window)
-    window.sr = _FakeArraySR()
+    window.data = SpikeGLXDataModel(_FakeArraySR())
     window.horizontalSlider.setMaximum(
-        int(np.floor(window.sr.ns / window.window_length_n))
+        int(np.floor(window.data.get_num_samples() / window.window_length_n))
     )
     for checkbox in window.cbs.values():
         checkbox.setChecked(False)
@@ -295,7 +331,9 @@ def test_jump_to_time_recenters_existing_zoom(qtbot, monkeypatch):
 
     x0, x1, padding = captured["viewer"].viewBox_seismic.xrange
     y0, y1, y_padding = captured["viewer"].viewBox_seismic.yrange
-    assert captured["t0"] == pytest.approx(window._first_sample / window.sr.fs)
+    assert captured["t0"] == pytest.approx(
+        window._first_sample / window.data.get_sampling_frequency()
+    )
     assert (x0 + x1) / 2 == pytest.approx(500.150)
     assert x1 - x0 == pytest.approx(0.1)
     assert padding == 0
@@ -331,19 +369,18 @@ def test_window_size_change_displays_different_data(qtbot):
     the underlying recording in the spawned 'raw' viewer."""
     window = EphysBinViewer()
     qtbot.addWidget(window)
-    window.sr = _RandomFakeArraySR()
+    window.data = SpikeGLXDataModel(_RandomFakeArraySR())
     window.update_slider_limits()
     for checkbox in window.cbs.values():
         checkbox.setChecked(False)
     window.cbs["raw"].setChecked(True)
-
-    nc = window.sr.nc - window.sr.nsync
+    window.on_horizontalSliderReleased()
 
     # Display a 0.10 s window and check the raw viewer shows the matching chunk.
     window.lineEdit_windowSize.setText("0.10")
     window.on_lineEdit_windowSizeChanged()
     n0 = window.window_length_n
-    expected0 = window.sr.data[0:n0, :nc] * A_SCALAR
+    expected0 = window.data.get_data(0, n0, "raw").T * A_SCALAR
     np.testing.assert_array_equal(
         window.viewers["raw"].imageItem_seismic.image, expected0
     )
@@ -352,7 +389,7 @@ def test_window_size_change_displays_different_data(qtbot):
     window.lineEdit_windowSize.setText("0.20")
     window.on_lineEdit_windowSizeChanged()
     n1 = window.window_length_n
-    expected1 = window.sr.data[0:n1, :nc] * A_SCALAR
+    expected1 = window.data.get_data(0, n1, "raw").T * A_SCALAR
     np.testing.assert_array_equal(
         window.viewers["raw"].imageItem_seismic.image, expected1
     )
@@ -360,12 +397,13 @@ def test_window_size_change_displays_different_data(qtbot):
 
     # Move the slider to start one second (fs samples) into the recording and
     # check the raw viewer now shows that later chunk.
-    slider_value = int(window.sr.fs // n1)
+    fs = window.data.get_sampling_frequency()
+    slider_value = int(fs // n1)
     window.horizontalSlider.setValue(slider_value)
     window.on_horizontalSliderReleased()
-    first = int(window.sr.fs)
+    first = int(fs)
     assert window._first_sample == first
-    expected_moved = window.sr.data[first : first + n1, :nc] * A_SCALAR
+    expected_moved = window.data.get_data(first, first + n1, "raw").T * A_SCALAR
     np.testing.assert_array_equal(
         window.viewers["raw"].imageItem_seismic.image, expected_moved
     )

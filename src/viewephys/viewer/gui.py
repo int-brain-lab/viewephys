@@ -185,6 +185,9 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
 
         # Keep the top strip x-linked, but hide its duplicate x-axis.
         self.plotItem_header_h.getPlotItem().hideAxis("bottom")
+        # Give the right-side header the same label height as the seismic bottom axis
+        # so its ViewBox stays flush with the seismic display.
+        self.plotItem_header_v.getAxis("bottom").setLabel(" ")
 
         self.hoverPlotWidgets = {"Trace": None, "Spectrum": None, "Spectrogram": None}
         scene = self.viewBox_seismic.scene()
@@ -602,11 +605,29 @@ class Controller(abc.ABC):
         self.view.grab().save(str(file))
 
     def sort(self, keys, redraw=True):
-        if not (set(keys).issubset(set(self.model.header.keys()))):
+        """
+        Sort the channels based on the passed keys, which should
+        match the entries in the header.
+
+        A "!" can be placed before the key for descending sorting
+        (lexsort only supports ascending sorting). For example,
+        sort(["x"]) will sort by "x" ascending, sort(["!x"]) will sort descending.
+        Note this assumes no header begins with "!".
+        """
+        strip_keys = [key.removeprefix("!") for key in keys]
+        if not (set(strip_keys).issubset(set(self.model.header.keys()))):
             return
-        if len(keys) == 0:
+        if len(strip_keys) == 0:
             return
-        self.trace_indices = np.lexsort([self.model.header[k] for k in keys])
+
+        to_sort = []
+        for key, strip_key in zip(keys, strip_keys, strict=True):
+            data = self.model.header[strip_key]
+            if key[0] == "!":
+                data = -data  # must copy here to not overwrite model header
+            to_sort.append(data)
+
+        self.trace_indices = np.lexsort(to_sort)
         if redraw:
             self.redraw()
 
