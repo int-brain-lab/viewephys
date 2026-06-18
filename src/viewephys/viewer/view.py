@@ -94,6 +94,7 @@ class Ui_MainWindow:
         window.label_gain.setObjectName("label_gain")
         window.gridLayout_2.addWidget(window.label_gain, 0, 0, 1, 1)
         window.stackedWidget_gain = QtWidgets.QStackedWidget(window.frame_seismic)
+        window.stackedWidget_gain.setFrameShape(QtWidgets.QFrame.NoFrame)
         window.stackedWidget_gain.setObjectName("stackedWidget_gain")
         window.page_gain_density = QtWidgets.QWidget()
         window.page_gain_density.setObjectName("page_gain_density")
@@ -101,6 +102,7 @@ class Ui_MainWindow:
             window.page_gain_density
         )
         window.page_gain_density_layout.setContentsMargins(0, 0, 0, 0)
+        window.page_gain_density_layout.setSpacing(0)
         window.page_gain_density_layout.setObjectName("page_gain_density_layout")
         window.lineEdit_gain_density = QtWidgets.QLineEdit(window.page_gain_density)
         size_policy = QtWidgets.QSizePolicy(
@@ -121,6 +123,7 @@ class Ui_MainWindow:
         window.page_gain_wiggle.setObjectName("page_gain_wiggle")
         window.page_gain_wiggle_layout = QtWidgets.QVBoxLayout(window.page_gain_wiggle)
         window.page_gain_wiggle_layout.setContentsMargins(0, 0, 0, 0)
+        window.page_gain_wiggle_layout.setSpacing(0)
         window.page_gain_wiggle_layout.setObjectName("page_gain_wiggle_layout")
         window.lineEdit_gain_wiggle = QtWidgets.QLineEdit(window.page_gain_wiggle)
         window.lineEdit_gain_wiggle.setSizePolicy(size_policy)
@@ -129,6 +132,9 @@ class Ui_MainWindow:
         window.lineEdit_gain_wiggle.setObjectName("lineEdit_gain_wiggle")
         window.page_gain_wiggle_layout.addWidget(window.lineEdit_gain_wiggle)
         window.stackedWidget_gain.addWidget(window.page_gain_wiggle)
+        window.stackedWidget_gain.setSizePolicy(size_policy)
+        window.stackedWidget_gain.setMinimumSize(QtCore.QSize(65, 0))
+        window.stackedWidget_gain.setMaximumSize(QtCore.QSize(50, 16777215))
         window.gridLayout_2.addWidget(window.stackedWidget_gain, 0, 1, 1, 1)
         window.label_amp = QtWidgets.QLabel(window.frame_seismic)
         window.label_amp.setMinimumSize(QtCore.QSize(70, 0))
