@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from qtpy import QtCore, QtWidgets
 
-from viewephys.gui import EphysBinViewer, create_app, viewephys
+from viewephys.gui import A_SCALAR, EphysBinViewer, create_app, viewephys
 from viewephys.tests.test_viewer_helpers import synthetic_seismic_data
 from viewephys.viewer.gui import EasyQC, viewseis
 
@@ -89,6 +89,18 @@ class _FakeArraySR(_FakeSR):
         last_channel = self.nc if channel_slice.stop is None else channel_slice.stop
         shape = (last - first, last_channel - first_channel)
         return np.zeros(shape, dtype=np.float32)
+
+
+class _RandomFakeArraySR(_FakeArraySR):
+    """A small test file used to check the data displyaed is as expected."""
+
+    ns = int(
+        _FakeArraySR.fs * 5
+    )  # because we create the full array, make short recording
+    data = np.random.random((ns, _FakeArraySR.nc))
+
+    def __getitem__(self, key):
+        return self.data[key]
 
 
 class _FakeViewBox:
@@ -314,69 +326,49 @@ def test_script_api_viewephys(qtbot, synthetic_seis):
     window.close()
 
 
-class _RampArraySR(_FakeArraySR):
-    """Array reader returning a per-sample ramp so the displayed window of data
-    is identifiable by its sample indices."""
-
-    def __getitem__(self, key):
-        sample_slice, channel_slice = key
-        first = 0 if sample_slice.start is None else sample_slice.start
-        last = self.ns if sample_slice.stop is None else sample_slice.stop
-        first_channel = 0 if channel_slice.start is None else channel_slice.start
-        last_channel = self.nc if channel_slice.stop is None else channel_slice.stop
-        n_channels = last_channel - first_channel
-        samples = np.arange(first, last, dtype=np.float32)
-        return np.tile(samples[:, np.newaxis], (1, n_channels))
-
-
-class _RandomArraySR(_FakeArraySR):
-    """Array reader backed by a fixed random recording so the displayed chunk
-    can be compared against the underlying data."""
-
-    def __init__(self):
-        self.recording = np.random.randn(self.ns, self.nc).astype(np.float32)
-
-    def __getitem__(self, key):
-        return self.recording[key]
-
-
-def test_window_size_change_displays_different_data(qtbot, monkeypatch):
+def test_window_size_change_displays_different_data(qtbot):
     """Changing the window size must reload and display the matching chunk of
-    the underlying recording in the spawned viewer."""
+    the underlying recording in the spawned 'raw' viewer."""
     window = EphysBinViewer()
     qtbot.addWidget(window)
-    window.sr = _RandomArraySR()
+    window.sr = _RandomFakeArraySR()
     window.update_slider_limits()
-    window.lineEdit_windowSize.setEnabled(True)
-    window.update_window_lineedit()
     for checkbox in window.cbs.values():
         checkbox.setChecked(False)
     window.cbs["raw"].setChecked(True)
 
-    captured = {}
-
-    def fake_viewephys(data, fs, channels=None, title="ephys", t0=0.0, **kwargs):
-        captured["data"] = np.asarray(data)
-        return _FakeViewer(xlim=[t0, t0 + data.shape[1] / fs])
-
-    monkeypatch.setattr("viewephys.gui.viewephys", fake_viewephys)
-
     nc = window.sr.nc - window.sr.nsync
 
-    # Display a 0.10 s window and check it matches the underlying chunk.
+    # Display a 0.10 s window and check the raw viewer shows the matching chunk.
     window.lineEdit_windowSize.setText("0.10")
     window.on_lineEdit_windowSizeChanged()
     n0 = window.window_length_n
-    expected0 = window.sr.recording[0:n0, :nc].T
-    np.testing.assert_array_equal(captured["data"], expected0)
+    expected0 = window.sr.data[0:n0, :nc] * A_SCALAR
+    np.testing.assert_array_equal(
+        window.viewers["raw"].imageItem_seismic.image, expected0
+    )
 
     # A wider window must display a different, larger chunk of the recording.
     window.lineEdit_windowSize.setText("0.20")
     window.on_lineEdit_windowSizeChanged()
     n1 = window.window_length_n
-    expected1 = window.sr.recording[0:n1, :nc].T
-    np.testing.assert_array_equal(captured["data"], expected1)
-    assert captured["data"].shape[1] == n1 != n0
+    expected1 = window.sr.data[0:n1, :nc] * A_SCALAR
+    np.testing.assert_array_equal(
+        window.viewers["raw"].imageItem_seismic.image, expected1
+    )
+    assert window.viewers["raw"].imageItem_seismic.image.shape[0] == n1 != n0
+
+    # Move the slider to start one second (fs samples) into the recording and
+    # check the raw viewer now shows that later chunk.
+    slider_value = int(window.sr.fs // n1)
+    window.horizontalSlider.setValue(slider_value)
+    window.on_horizontalSliderReleased()
+    first = int(window.sr.fs)
+    assert window._first_sample == first
+    expected_moved = window.sr.data[first : first + n1, :nc] * A_SCALAR
+    np.testing.assert_array_equal(
+        window.viewers["raw"].imageItem_seismic.image, expected_moved
+    )
 
     window.close()
     window.deleteLater()
