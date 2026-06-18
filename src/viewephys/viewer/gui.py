@@ -147,7 +147,7 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
         self.plotItem_seismic.setBackground(background_color)
         self.plotItem_seismic.addItem(self.imageItem_seismic)
         self.plotDataItem_wiggle = pg.PlotDataItem(visible=False)
-        self.plotDataItem_wiggle.setPen(pg.mkPen("#000000", width=0.9))
+        self.plotDataItem_wiggle.setPen(pg.mkPen("#ebc000", width=0.9))
         self.plotItem_seismic.addItem(self.plotDataItem_wiggle)
         self.viewBox_seismic = self.plotItem_seismic.getPlotItem().getViewBox()
         self._init_menu()
@@ -425,7 +425,7 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
             self.imageItem_seismic.setVisible(False)
             self.plotDataItem_wiggle.setVisible(True)
             self.plotItem_seismic.getPlotItem().getViewBox().setBackgroundColor(
-                "#ffffff"
+                "#193600"
             )
         self.ctrl.set_model(reset_viewbox=False)
 
