@@ -33,12 +33,6 @@ class Model:
     x0: float = 0
     taxis: int = 0
 
-    def auto_gain(self) -> float:
-        rmsnan = np.nansum(self.data**2, axis=self.taxis) / np.sum(
-            ~np.isnan(self.data), axis=self.taxis
-        )
-        return 20 * np.log10(np.median(np.sqrt(rmsnan)))
-
     def get_trace_spectrogram(self, c, trange=None):
         from scipy.signal import spectrogram
 
@@ -190,7 +184,8 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
             scene.sigMouseMoved, rateLimit=60, slot=self.mouseMoveEvent
         )
         scene.sigMouseClicked.connect(self.mouseClick)
-        self.lineEdit_gain.returnPressed.connect(self.editGain)
+        self.lineEdit_gain_density.returnPressed.connect(self.editGain)
+        self.lineEdit_gain_wiggle.returnPressed.connect(self.editGain)
         self.lineEdit_sort.returnPressed.connect(self.editSort)
         self.comboBox_header.activated[str].connect(self.ctrl.set_header)
         self.viewBox_seismic.sigRangeChanged.connect(self.on_sigRangeChanged)
@@ -417,6 +412,7 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
             return
         self._display_mode = mode
         if mode == DISPLAY_MODE_DENSITY:
+            self.stackedWidget_gain.setCurrentWidget(self.page_gain_density)
             self.imageItem_seismic.setVisible(True)
             self.plotDataItem_wiggle.setVisible(False)
             self.plotDataItem_wiggle.clear()
@@ -424,6 +420,7 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
                 self.palette().color(self.backgroundRole())
             )
         elif mode == DISPLAY_MODE_WIGGLE:
+            self.stackedWidget_gain.setCurrentWidget(self.page_gain_wiggle)
             self.imageItem_seismic.clear()
             self.imageItem_seismic.setVisible(False)
             self.plotDataItem_wiggle.setVisible(True)
@@ -431,6 +428,12 @@ class EasyQC(QtWidgets.QMainWindow, Ui_MainWindow):
                 "#ffffff"
             )
         self.ctrl.set_model(reset_viewbox=False)
+
+    def gain_line_edit(self, mode: str | None = None):
+        mode = self._display_mode if mode is None else mode
+        if mode == DISPLAY_MODE_WIGGLE:
+            return self.lineEdit_gain_wiggle
+        return self.lineEdit_gain_density
 
 
 class Controller(abc.ABC):
@@ -440,6 +443,11 @@ class Controller(abc.ABC):
         self.transform = np.eye(3)
         self.trace_indices = None
         self.hkey = None
+
+    @property
+    @abc.abstractmethod
+    def gain_line_edit(self):
+        pass
 
     @abc.abstractmethod
     def set_gain(self, gain=None):
@@ -555,11 +563,17 @@ class Controller(abc.ABC):
                 rect.translate(rect.width(), 0)
                 eqc.setGeometry(rect)
 
+    def auto_gain(self):
+        rmsnan = np.nansum(self.model.data**2, axis=self.model.taxis) / np.sum(
+            ~np.isnan(self.model.data), axis=self.model.taxis
+        )
+        return 20 * np.log10(np.median(np.sqrt(rmsnan)))
+
     @property
     def gain(self):
-        str_gain = self.view.lineEdit_gain.text()
+        str_gain = self.gain_line_edit.text()
         if str_gain.strip() == "":
-            return self.model.auto_gain()
+            return self.auto_gain()
         return float(str_gain)
 
     def set_header(self):
@@ -651,6 +665,10 @@ class Controller(abc.ABC):
 
 
 class ControllerWiggle(Controller):
+    @property
+    def gain_line_edit(self):
+        return self.view.gain_line_edit(DISPLAY_MODE_WIGGLE)
+
     def _update_plotItem(self, tlim=None, clim=None):
         if self.model.taxis == 0:
             xlim, ylim = (tlim, clim)
@@ -678,14 +696,28 @@ class ControllerWiggle(Controller):
             self.view.viewBox_seismic.setXRange(*xlim, padding=0)
             self.view.viewBox_seismic.setYRange(*ylim, padding=0)
 
+    def auto_gain(self):
+        """Set the gain for the wiggle plot.
+
+        Here the gain is computed such that the max peak-to-peak height
+        of a channel's data is 1, which is the spacing between channel lines
+        (see _update_plotItem).
+        """
+        _max = np.max(np.max(self.model.data, axis=0) - np.min(self.model.data, axis=0))
+        return 20 * np.log10(_max)
+
     def set_gain(self, gain=None):
         if gain is None:
             gain = self.gain
-        self.view.lineEdit_gain.setText(f"{gain:.1f}")
+        self.gain_line_edit.setText(f"{gain:.1f}")
         self._update_plotItem()
 
 
 class ControllerImage(Controller):
+    @property
+    def gain_line_edit(self):
+        return self.view.gain_line_edit(DISPLAY_MODE_DENSITY)
+
     def _update_plotItem(self, tlim, clim):
         x0, t0, si = self.model.x0, self.model.t0, self.model.si
         if self.model.taxis == 0:
@@ -724,7 +756,7 @@ class ControllerImage(Controller):
             gain = self.gain
         levels = 10 ** (gain / 20) * 4 * np.array([-1, 1])
         self.view.imageItem_seismic.setLevels(levels)
-        self.view.lineEdit_gain.setText(f"{gain:.1f}")
+        self.gain_line_edit.setText(f"{gain:.1f}")
 
 
 def viewseis(w=None, si=0.002, h=None, title=None, t0=0, x0=0, taxis=1):

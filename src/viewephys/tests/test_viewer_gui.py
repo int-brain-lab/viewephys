@@ -49,11 +49,21 @@ def test_window_builds(easyqc_window):
 
 def test_gain_edit_updates(view_with_data, qtbot):
     window = view_with_data
-    window.lineEdit_gain.setText("6")
-    qtbot.keyPress(window.lineEdit_gain, QtCore.Qt.Key_Return)
+    window.lineEdit_gain_density.setText("6")
+    qtbot.keyPress(window.lineEdit_gain_density, QtCore.Qt.Key_Return)
     qtbot.mouseClick(window.radio_wiggle, QtCore.Qt.LeftButton)
-    qtbot.keyPress(window.lineEdit_gain, QtCore.Qt.Key_Return)
-    assert float(window.lineEdit_gain.text()) == 6.0
+    window.lineEdit_gain_wiggle.setText("12")
+    qtbot.keyPress(window.lineEdit_gain_wiggle, QtCore.Qt.Key_Return)
+    assert float(window.lineEdit_gain_density.text()) == 6.0
+    assert float(window.lineEdit_gain_wiggle.text()) == 12.0
+
+    qtbot.mouseClick(window.radio_density, QtCore.Qt.LeftButton)
+    assert window.stackedWidget_gain.currentWidget() is window.page_gain_density
+    assert float(window.lineEdit_gain_density.text()) == 6.0
+
+    qtbot.mouseClick(window.radio_wiggle, QtCore.Qt.LeftButton)
+    assert window.stackedWidget_gain.currentWidget() is window.page_gain_wiggle
+    assert float(window.lineEdit_gain_wiggle.text()) == 12.0
 
 
 def test_toggle_density_wiggle(view_with_data, qtbot):
