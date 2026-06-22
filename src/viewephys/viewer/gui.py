@@ -534,10 +534,13 @@ class Controller(abc.ABC):
         return ix, iy
 
     def limits(self):
-        ixlim = [0, self.model.nx]
+        ixlim = [0, self.get_max_time()]
         iylim = [0, self.model.ny]
         x, y, _ = np.matmul(self.transform, np.c_[ixlim, iylim, [1, 1]].T)
         return x, y
+
+    def get_max_time(self):
+        return self.model.nx
 
     def propagate(self, explode=False):
         eqcs = self.view._instances()
@@ -685,6 +688,9 @@ class ControllerWiggle(Controller):
             gain = self.gain
         self.view.lineEdit_gain.setText(f"{gain:.1f}")
         self._update_plotItem()
+
+    def get_max_time(self):
+        return self.model.nx * self.model.si
 
 
 class ControllerImage(Controller):
