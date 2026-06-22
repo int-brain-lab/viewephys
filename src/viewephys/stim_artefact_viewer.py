@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
+from time import sleep
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -11,8 +14,6 @@ from qtpy import QtCore, QtGui, QtWidgets
 from viewephys.gui import A_SCALAR, T_SCALAR, EphysViewer, create_app
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     import matplotlib
 
 
@@ -226,8 +227,40 @@ class StimArtefactViewer(EphysViewer):
         self._repopulate_event_widgets()
         self.move_to_region(self.selected_event_idx)
 
+    def _set_save_status(self, message: str, success: bool = True) -> None:
+        if success:
+            self.label_stim_save_status.setStyleSheet("color: #3c78b8;")
+        else:
+            self.label_stim_save_status.setStyleSheet("color: #a61b1b;")
+        self.label_stim_save_status.setText(message)
+        self.label_stim_save_status.setVisible(True)
+
     def _on_save_clicked(self) -> None:
-        self.events.to_csv(self.events_path, index=False)
+        destination = Path(self.events_path)
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            previous_mtime_ns = None
+            if destination.exists():
+                previous_mtime_ns = destination.stat().st_mtime_ns
+
+            self.events.to_csv(destination, index=False)
+
+            deadline = datetime.now().timestamp() + 2.0
+            while True:
+                if destination.exists() and destination.stat().st_size > 0:
+                    current_mtime_ns = destination.stat().st_mtime_ns
+                    if previous_mtime_ns is None or current_mtime_ns > previous_mtime_ns:
+                        break
+                if datetime.now().timestamp() >= deadline:
+                    raise OSError("Saved file timestamp did not update")
+                sleep(0.01)
+
+            self._set_save_status(
+                f"File Saved ({datetime.now().strftime('%H:%M:%S')})"
+            )
+        except Exception as exc:
+            self._set_save_status("Save failed", success=False)
+            raise RuntimeError(f"Failed to save events: {exc}") from exc
 
     def _on_load_clicked(self) -> None:
         self.events = pd.read_csv(self.events_path)
@@ -664,8 +697,10 @@ class StimArtefactViewer(EphysViewer):
         edits_row.addWidget(self.lineEdit_stim_t1)
         edits_row.addStretch(1)
 
-        btn_row = QtWidgets.QHBoxLayout()
-        btn_row.setSpacing(4)
+        btn_row = QtWidgets.QGridLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        btn_row.setHorizontalSpacing(4)
+        btn_row.setVerticalSpacing(2)
         self.pushButton_stim_undo = QtWidgets.QPushButton(
             "Undo", self.groupBox_region_controls
         )
@@ -686,11 +721,24 @@ class StimArtefactViewer(EphysViewer):
         )
         self.pushButton_stim_load.setObjectName("pushButton_stim_load")
         self.pushButton_stim_load.clicked.connect(self._on_load_clicked)
-        btn_row.addWidget(self.pushButton_stim_undo)
-        btn_row.addWidget(self.pushButton_stim_redo)
-        btn_row.addWidget(self.pushButton_stim_save)
-        btn_row.addWidget(self.pushButton_stim_load)
-        btn_row.addStretch(1)
+        btn_row.addWidget(self.pushButton_stim_undo, 0, 0)
+        btn_row.addWidget(self.pushButton_stim_redo, 0, 1)
+        btn_row.addWidget(self.pushButton_stim_save, 0, 2)
+        btn_row.addWidget(self.pushButton_stim_load, 0, 3)
+        btn_row.setColumnStretch(4, 1)
+
+        self.label_stim_save_status = QtWidgets.QLabel(
+            "", self.groupBox_region_controls
+        )
+        self.label_stim_save_status.setObjectName("label_stim_save_status")
+        self.label_stim_save_status.setVisible(False)
+        self.label_stim_save_status.setAlignment(QtCore.Qt.AlignCenter)
+        self.label_stim_save_status.setWordWrap(True)
+        self.label_stim_save_status.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed
+        )
+        self.label_stim_save_status.setStyleSheet("color: #5f9ed8;")
+        btn_row.addWidget(self.label_stim_save_status, 1, 2, 1, 2)
 
         region_controls_layout.addLayout(edits_row)
         region_controls_layout.addLayout(btn_row)

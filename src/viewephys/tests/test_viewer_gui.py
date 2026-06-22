@@ -350,6 +350,39 @@ def test_stim_event_count_label_updates_on_edit_actions(qtbot, synthetic_seis, t
     window.deleteLater()
 
 
+def test_stim_save_status_label_shows_after_successful_save(qtbot, synthetic_seis, tmp_path):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10],
+            "end_sample": [20],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_stim_save_status_label_shows_after_successful_save",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+
+    assert not window.label_stim_save_status.isVisible()
+
+    window._on_save_clicked()
+
+    assert window.label_stim_save_status.isVisible()
+    assert window.label_stim_save_status.text().startswith("File Saved (")
+    assert window.label_stim_save_status.text().endswith(")")
+
+    window.close()
+    window.deleteLater()
+
+
 def test_jump_to_time_clamps_out_of_range(jump_window, qtbot):
     window = jump_window
     max_first = max(0, int(window.data.get_num_samples()) - window.window_length_n)
