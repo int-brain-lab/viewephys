@@ -37,6 +37,25 @@ def seconds_to_samples(seconds, fs: float, first_time: float = 0.0):
     return samples.item() if samples.ndim == 0 else samples
 
 
+class SelectableLinearRegionItem(pg.LinearRegionItem):
+    sigRegionClicked = QtCore.Signal()
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        for line in self.lines:
+            line.sigClicked.connect(self._emit_clicked)
+
+    def _emit_clicked(self, *_) -> None:
+        self.sigRegionClicked.emit()
+
+    def mouseClickEvent(self, ev) -> None:
+        if ev.button() == QtCore.Qt.MouseButton.LeftButton:
+            self.sigRegionClicked.emit()
+            ev.accept()
+            return
+        super().mouseClickEvent(ev)
+
+
 class StimArtefactViewer(EphysViewer):
     request_jump_to_time = QtCore.Signal(float)
 
@@ -52,7 +71,7 @@ class StimArtefactViewer(EphysViewer):
         self._context_menu_region_center_time: float | None = None
         self._init_region_context_menu()
         self.extend_gui()
-        self._event_regions: list[pg.LinearRegionItem] = []
+        self._event_regions: list[SelectableLinearRegionItem] = []
         self._visible_event_indices: list[int] = []
         self.selected_event_idx: int | None = 0
         self._regions_hidden = False
@@ -113,6 +132,11 @@ class StimArtefactViewer(EphysViewer):
 
     def _on_add_region_menu_clicked(self) -> None:
         self._on_add_event_clicked(self._context_menu_region_center_time)
+
+    def _on_region_clicked(self, ev_idx: int) -> None:
+        if ev_idx == self.selected_event_idx:
+            return
+        self.move_to_region(ev_idx)
 
     def update_snapshot(self):
         self.events_snapshots.append(
@@ -458,13 +482,16 @@ class StimArtefactViewer(EphysViewer):
             return
 
         for event_idx, event in visible.iterrows():
-            region = pg.LinearRegionItem(
+            region = SelectableLinearRegionItem(
                 values=(
                     self._samples_to_seconds(float(event["start_sample"])),
                     self._samples_to_seconds(float(event["end_sample"])),
                 ),
                 orientation="vertical",
                 movable=False,
+            )
+            region.sigRegionClicked.connect(
+                lambda ev_idx=int(event_idx): self._on_region_clicked(ev_idx)
             )
             region.sigRegionChangeFinished.connect(
                 lambda *_, ev_idx=int(event_idx): self._on_region_change_finished(

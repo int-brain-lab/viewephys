@@ -631,6 +631,41 @@ def test_stim_keyboard_shortcuts_navigate_events(qtbot, synthetic_seis, tmp_path
     window.deleteLater()
 
 
+def test_stim_clicking_region_selects_it(qtbot, synthetic_seis, tmp_path):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10, 30],
+            "end_sample": [20, 40],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_stim_clicking_region_selects_it",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+
+    assert window.selected_event_idx == 0
+
+    region = window.get_visible_region(1)
+    assert region is not None
+
+    region.sigRegionClicked.emit()
+
+    assert window.selected_event_idx == 1
+    assert window.comboBox_stim_event_index.currentIndex() == 1
+
+    window.close()
+    window.deleteLater()
+
+
 def test_stim_save_status_label_shows_after_successful_save(
     qtbot, synthetic_seis, tmp_path
 ):
