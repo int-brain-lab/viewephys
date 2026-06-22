@@ -484,6 +484,43 @@ def test_stim_event_count_label_updates_on_edit_actions(
     window.deleteLater()
 
 
+def test_stim_add_event_inserts_by_time_and_selects_new_region(
+    qtbot, synthetic_seis, tmp_path
+):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10, 100, 1000],
+            "end_sample": [20, 110, 1010],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_stim_add_event_inserts_by_time_and_selects_new_region",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+    window.viewBox_seismic.setRange(xRange=(0.0, 1.0))
+
+    window._on_add_event_clicked()
+
+    assert window.selected_event_idx == 2
+    assert window.comboBox_stim_event_index.currentIndex() == 2
+    assert window.events["start_sample"].tolist()[:2] == [10, 100]
+    assert window.events["start_sample"].tolist()[-1] == 1000
+    assert window.events.loc[2, "start_sample"] > 100
+    assert window.events.loc[2, "start_sample"] < 1000
+
+    window.close()
+    window.deleteLater()
+
+
 def test_stim_keyboard_shortcuts_navigate_events(qtbot, synthetic_seis, tmp_path):
     data, header = synthetic_seis
     events_path = tmp_path / "events.csv"

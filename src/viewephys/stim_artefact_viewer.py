@@ -298,6 +298,13 @@ class StimArtefactViewer(EphysViewer):
         self._update_region_change_status(visible=True)
         self.update_snapshot()
 
+    def _get_event_insert_position(self, start_sample: int) -> int:
+        """Return the index where an event should be inserted by time order."""
+        for ev_idx, row in self.events.iterrows():
+            if float(row["start_sample"]) > start_sample:
+                return int(ev_idx)
+        return len(self.events)
+
     def _on_add_event_clicked(self) -> None:
         # Placing the event in the current view needs model timing (set with data).
         if self.model.data is None:
@@ -312,14 +319,7 @@ class StimArtefactViewer(EphysViewer):
         if end_sample <= start_sample:
             end_sample = start_sample + 1
 
-        # Insert relative to the selected event: before it if the new event
-        # starts earlier, otherwise after it. Keeps events roughly ordered
-        # instead of always appending at the end.
-        current = self.selected_event_idx
-        if start_sample < float(self.events.loc[current, "start_sample"]):
-            insert_pos = current
-        else:
-            insert_pos = current + 1
+        insert_pos = self._get_event_insert_position(start_sample)
 
         new_row = pd.DataFrame(
             [{"start_sample": start_sample, "end_sample": end_sample}]
