@@ -54,6 +54,7 @@ class StimArtefactViewer(EphysViewer):
         self._visible_event_indices: list[int] = []
         self.selected_event_idx: int | None = 0
         self._regions_hidden = False
+        self.regions_changed_since_last_save = 0
 
         # do some validation
         self.events_path = events_path
@@ -235,6 +236,14 @@ class StimArtefactViewer(EphysViewer):
         self.label_stim_save_status.setText(message)
         self.label_stim_save_status.setVisible(True)
 
+    def _update_region_change_status(self, *, visible: bool | None = None) -> None:
+        self.label_stim_region_change_status.setStyleSheet("color: #3c78b8;")
+        self.label_stim_region_change_status.setText(
+            f"Events since saved: {self.regions_changed_since_last_save}"
+        )
+        if visible is not None:
+            self.label_stim_region_change_status.setVisible(visible)
+
     def _on_save_clicked(self) -> None:
         destination = Path(self.events_path)
         try:
@@ -249,15 +258,18 @@ class StimArtefactViewer(EphysViewer):
             while True:
                 if destination.exists() and destination.stat().st_size > 0:
                     current_mtime_ns = destination.stat().st_mtime_ns
-                    if previous_mtime_ns is None or current_mtime_ns > previous_mtime_ns:
+                    if (
+                        previous_mtime_ns is None
+                        or current_mtime_ns > previous_mtime_ns
+                    ):
                         break
                 if datetime.now().timestamp() >= deadline:
                     raise OSError("Saved file timestamp did not update")
                 sleep(0.01)
 
-            self._set_save_status(
-                f"File Saved ({datetime.now().strftime('%H:%M:%S')})"
-            )
+            self._set_save_status(f"File Saved ({datetime.now().strftime('%H:%M:%S')})")
+            self.regions_changed_since_last_save = 0
+            self._update_region_change_status(visible=True)
         except Exception as exc:
             self._set_save_status("Save failed", success=False)
             raise RuntimeError(f"Failed to save events: {exc}") from exc
@@ -265,7 +277,9 @@ class StimArtefactViewer(EphysViewer):
     def _on_load_clicked(self) -> None:
         self.events = pd.read_csv(self.events_path)
         self.selected_event_idx = int(self.events.index[0])
+        self.regions_changed_since_last_save = 0
         self._repopulate_event_widgets()
+        self._update_region_change_status(visible=True)
         self.update_snapshot()
 
     def _on_add_event_clicked(self) -> None:
@@ -306,7 +320,9 @@ class StimArtefactViewer(EphysViewer):
         self.selected_event_idx = insert_pos
         # plot_events_as_regions() (via _repopulate_event_widgets) rebuilds the
         # visible regions list from the reindexed events.
+        self.regions_changed_since_last_save += 1
         self._repopulate_event_widgets()
+        self._update_region_change_status(visible=True)
         self.update_snapshot()
 
     def _on_del_event_clicked(self) -> None:
@@ -321,11 +337,15 @@ class StimArtefactViewer(EphysViewer):
         current = self.selected_event_idx
         self.events = self.events.drop(index=current).reset_index(drop=True)
         self.selected_event_idx = 0 if current == 0 else current - 1
+        self.regions_changed_since_last_save -= 1
         self._repopulate_event_widgets()
+        self._update_region_change_status(visible=True)
         self.update_snapshot()
 
     def _update_event_count_label(self) -> None:
-        self.groupBox_region_select.setTitle(f"Region Select ({len(self.events)} events)")
+        self.groupBox_region_select.setTitle(
+            f"Region Select ({len(self.events)} events)"
+        )
 
     def _repopulate_event_widgets(self) -> None:
         self.plot_events_as_regions()
@@ -737,8 +757,22 @@ class StimArtefactViewer(EphysViewer):
         self.label_stim_save_status.setSizePolicy(
             QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed
         )
-        self.label_stim_save_status.setStyleSheet("color: #5f9ed8;")
+        self.label_stim_save_status.setStyleSheet("color: #3c78b8;")
         btn_row.addWidget(self.label_stim_save_status, 1, 2, 1, 2)
+
+        self.label_stim_region_change_status = QtWidgets.QLabel(
+            "", self.groupBox_region_controls
+        )
+        self.label_stim_region_change_status.setObjectName(
+            "label_stim_region_change_status"
+        )
+        self.label_stim_region_change_status.setVisible(False)
+        self.label_stim_region_change_status.setAlignment(QtCore.Qt.AlignCenter)
+        self.label_stim_region_change_status.setWordWrap(True)
+        self.label_stim_region_change_status.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed
+        )
+        btn_row.addWidget(self.label_stim_region_change_status, 2, 2, 1, 2)
 
         region_controls_layout.addLayout(edits_row)
         region_controls_layout.addLayout(btn_row)
