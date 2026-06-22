@@ -69,6 +69,138 @@ def test_toggle_density_wiggle(view_with_data, qtbot):
     assert window._display_mode == "density"
 
 
+def test_viewer_wiggle_limits_match_density_time_bounds(
+    qtbot, synthetic_seis, tmp_path
+):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame({"start_sample": [10], "end_sample": [20]}).to_csv(
+        events_path, index=False
+    )
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_viewer_wiggle_limits_match_density_time_bounds",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+
+    density_xlim, _ = window.ctrl.limits()
+
+    qtbot.mouseClick(window.radio_wiggle, QtCore.Qt.LeftButton)
+    wiggle_xlim, _ = window.ctrl.limits()
+
+    assert wiggle_xlim == pytest.approx(density_xlim)
+
+    window.close()
+    window.deleteLater()
+
+
+def test_filtered_channel_limits_drive_scrollbars_across_modes(
+    qtbot, synthetic_seis, tmp_path
+):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame({"start_sample": [10], "end_sample": [20]}).to_csv(
+        events_path, index=False
+    )
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_filtered_channel_limits_drive_scrollbars_across_modes",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+
+    window._on_channels_none()
+    for row in range(3):
+        window.listWidget_stim_channels.item(row).setSelected(True)
+    window._on_channels_apply()
+
+    np.testing.assert_array_equal(window.ctrl.trace_indices, np.array([0, 1, 2]))
+
+    _, density_ylim = window.ctrl.limits()
+    assert density_ylim == pytest.approx([-0.5, 2.5])
+    assert window.verticalScrollBar.maximum() == 0
+
+    qtbot.mouseClick(window.radio_wiggle, QtCore.Qt.LeftButton)
+
+    _, wiggle_ylim = window.ctrl.limits()
+    assert wiggle_ylim == pytest.approx([-0.5, 2.5])
+    assert window.verticalScrollBar.maximum() == 0
+
+    window.close()
+    window.deleteLater()
+
+
+def test_wiggle_auto_space_limits_follow_plotted_data(qtbot, synthetic_seis, tmp_path):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame({"start_sample": [10], "end_sample": [20]}).to_csv(
+        events_path, index=False
+    )
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_wiggle_auto_space_limits_follow_plotted_data",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+
+    window._on_channels_none()
+    for row in range(3):
+        window.listWidget_stim_channels.item(row).setSelected(True)
+    window._on_channels_apply()
+
+    qtbot.mouseClick(window.radio_wiggle, QtCore.Qt.LeftButton)
+    qtbot.mouseClick(window.checkbox_auto_space_wiggle, QtCore.Qt.LeftButton)
+
+    _, y = window.plotDataItem_wiggle.getData()
+    _, ylim = window.ctrl.limits()
+
+    assert ylim == pytest.approx([float(np.min(y)), float(np.max(y))])
+
+    window.close()
+    window.deleteLater()
+
+
+def test_vertical_scrollbar_up_moves_plot_up(view_with_data, qtbot):
+    window = view_with_data
+    bounds = window.ctrl.limits()[1]
+
+    window.viewBox_seismic.setYRange(bounds[0], bounds[0] + 50, padding=0)
+    qtbot.wait(10)
+
+    current_span = (
+        window.viewBox_seismic.viewRange()[1][1]
+        - window.viewBox_seismic.viewRange()[1][0]
+    )
+    expected_upper_start = bounds[1] - current_span
+
+    window.verticalScrollBar.setValue(0)
+    qtbot.wait(10)
+    upper_range = window.viewBox_seismic.viewRange()[1]
+    assert upper_range[0] == pytest.approx(expected_upper_start)
+    assert upper_range[1] == pytest.approx(bounds[1])
+
+    window.verticalScrollBar.setValue(window.verticalScrollBar.maximum())
+    qtbot.wait(10)
+    lower_range = window.viewBox_seismic.viewRange()[1]
+    assert lower_range[0] == pytest.approx(bounds[0])
+
+
 def test_sort_reorders_plotted_image_multiple_keys(view_with_data):
     """Sorting by multiple keys should reorder the plotted image
     without mutating the header.

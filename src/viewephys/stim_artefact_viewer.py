@@ -589,9 +589,7 @@ class StimArtefactViewer(EphysViewer):
 
     def _populate_channel_list(self, ids) -> None:
         self.listWidget_stim_channels.clear()
-        # Display channels top-to-bottom in the same order they are plotted
-        # (the seismic view draws increasing trace indices going up).
-        for trace_idx, channel_id in reversed(list(enumerate(ids))):
+        for trace_idx, channel_id in enumerate(ids):
             item = QtWidgets.QListWidgetItem(str(channel_id))
             item.setData(QtCore.Qt.UserRole, trace_idx)
             self.listWidget_stim_channels.addItem(item)
