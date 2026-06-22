@@ -74,6 +74,12 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self._first_sample = 0
         self.horizontalSlider.sliderReleased.connect(self.on_horizontalSliderReleased)
         self.horizontalSlider.valueChanged.connect(self.on_horizontalSliderValueChanged)
+        self.pushButton_previousWindow.clicked.connect(
+            lambda: self.on_windowStepButtonClicked(-1)
+        )
+        self.pushButton_nextWindow.clicked.connect(
+            lambda: self.on_windowStepButtonClicked(1)
+        )
         validator = QtGui.QDoubleValidator(0.0, 1e12, 6, self.lineEdit_jumpTime)
         validator.setNotation(QtGui.QDoubleValidator.StandardNotation)
 
@@ -173,6 +179,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.horizontalSlider.setValue(0)
         self._first_sample = 0
         self.horizontalSlider.setEnabled(True)
+        self.pushButton_previousWindow.setEnabled(True)
+        self.pushButton_nextWindow.setEnabled(True)
         self.lineEdit_jumpTime.setEnabled(True)
         self._update_time_label()
         self.on_horizontalSliderReleased()
@@ -240,6 +248,19 @@ class EphysBinViewer(QtWidgets.QMainWindow):
     def on_horizontalSliderValueChanged(self) -> None:
         self._first_sample = int(self.horizontalSlider.value())
         self._update_time_label()
+
+    def on_windowStepButtonClicked(self, direction: int) -> None:
+        if not hasattr(self, "data"):
+            return
+
+        current_value = int(self.horizontalSlider.value())
+        next_value = current_value + int(direction) * int(self.window_length_n)
+        next_value = max(0, min(next_value, self.horizontalSlider.maximum()))
+        if next_value == current_value:
+            return
+
+        self.horizontalSlider.setValue(next_value)
+        self.on_horizontalSliderReleased()
 
     def on_lineEdit_windowSizeChanged(self) -> None:
         text = self.lineEdit_windowSize.text().strip()

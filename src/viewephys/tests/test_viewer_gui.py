@@ -321,6 +321,8 @@ def jump_window(qtbot, monkeypatch):
     max_first = max(0, int(window.data.get_num_samples()) - window.window_length_n)
     window.horizontalSlider.setMaximum(max_first)
     window.horizontalSlider.setEnabled(True)
+    window.pushButton_previousWindow.setEnabled(True)
+    window.pushButton_nextWindow.setEnabled(True)
     window.lineEdit_jumpTime.setEnabled(True)
     monkeypatch.setattr(
         window, "on_horizontalSliderReleased", lambda center_time=None: None
@@ -381,6 +383,30 @@ def test_slider_drag_resets_first_sample_to_chunk(jump_window, qtbot):
     assert window.lineEdit_jumpTime.text() == (
         f"{1501 / window.data.get_sampling_frequency():0.6f}"
     )
+
+
+def test_window_step_buttons_move_slider_by_one_window(jump_window, qtbot, monkeypatch):
+    window = jump_window
+    reloads = []
+    monkeypatch.setattr(
+        window,
+        "on_horizontalSliderReleased",
+        lambda center_time=None: reloads.append(center_time),
+    )
+
+    window.horizontalSlider.setValue(2 * window.window_length_n)
+
+    qtbot.mouseClick(window.pushButton_previousWindow, QtCore.Qt.LeftButton)
+
+    assert window.horizontalSlider.value() == window.window_length_n
+    assert window._first_sample == window.window_length_n
+    assert reloads == [None]
+
+    qtbot.mouseClick(window.pushButton_nextWindow, QtCore.Qt.LeftButton)
+
+    assert window.horizontalSlider.value() == 2 * window.window_length_n
+    assert window._first_sample == 2 * window.window_length_n
+    assert reloads == [None, None]
 
 
 def test_stim_region_lineedits_fill_from_samples(qtbot, synthetic_seis, tmp_path):

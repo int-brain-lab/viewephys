@@ -224,7 +224,7 @@
           <property name="topMargin">
            <number>0</number>
           </property>
-          <item row="0" column="3">
+          <item row="0" column="5">
            <spacer name="horizontalSpacer_4">
             <property name="orientation">
              <enum>Qt::Horizontal</enum>
@@ -237,6 +237,44 @@
             </property>
            </spacer>
           </item>
+             <item row="0" column="3">
+              <widget class="QPushButton" name="pushButton_previousWindow">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="maximumSize">
+                <size>
+                         <width>36</width>
+                         <height>16777215</height>
+                </size>
+               </property>
+               <property name="toolTip">
+                <string>Move back one window</string>
+               </property>
+               <property name="text">
+                <string>&lt;</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="4">
+              <widget class="QPushButton" name="pushButton_nextWindow">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="maximumSize">
+                <size>
+                         <width>36</width>
+                         <height>16777215</height>
+                </size>
+               </property>
+               <property name="toolTip">
+                <string>Move forward one window</string>
+               </property>
+               <property name="text">
+                <string>&gt;</string>
+               </property>
+              </widget>
+             </item>
           <item row="0" column="0">
            <spacer name="horizontalSpacer_jumpTime">
             <property name="orientation">
