@@ -238,7 +238,7 @@ class SpikeInterfaceDataModel(AbstractDataModel):
         except Exception:
             geom = {
                 "trace": np.arange(num_channels),
-                "ids": self.first_recording.get_channel_ids()  # TODO: do not show this in trace dropdown
+                "ids": self.first_recording.get_channel_ids(),  # TODO: do not show this in trace dropdown
             }
             return geom
 
@@ -247,6 +247,7 @@ class SpikeInterfaceDataModel(AbstractDataModel):
         if (
             not self.first_recording.has_probe()
             or self.first_recording.get_probe().shank_ids is None
+            or self.first_recording.get_probe.shank_ids[0] == ""
         ):
             positions = (
                 self.first_recording.get_channel_locations()
@@ -256,7 +257,7 @@ class SpikeInterfaceDataModel(AbstractDataModel):
                 "trace": np.arange(num_channels),
                 "x": positions[:, 0],
                 "y": positions[:, 1],
-                "ids": self.first_recording.get_channel_ids()  # TODO: do not show this in trace dropdown
+                "ids": self.first_recording.get_channel_ids(),  # TODO: do not show this in trace dropdown
             }
             return geom
 
@@ -281,7 +282,7 @@ class SpikeInterfaceDataModel(AbstractDataModel):
             # TODO: we have no flag yet. We can look for it on the SI recording
             "col": col,
             "row": row.astype(int),
-            "ids": self.first_recording.get_channel_ids() # TODO: do not show this in trace dropdown
+            "ids": self.first_recording.get_channel_ids(),  # TODO: do not show this in trace dropdown
         }
 
         if (
