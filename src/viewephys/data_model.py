@@ -226,6 +226,7 @@ class SpikeInterfaceDataModel(AbstractDataModel):
         if (
             not self.first_recording.has_probe()
             or self.first_recording.get_probe().shank_ids is None
+            or self.first_recording.get_probe().shank_ids[0] == ""
         ):
             positions = (
                 self.first_recording.get_channel_locations()
