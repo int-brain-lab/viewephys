@@ -111,7 +111,7 @@ class StimArtefactViewer(EphysViewer):
 
     @staticmethod
     def _format_time(value: float) -> str:
-        return f"{value:.3f}"
+        return f"{value:.6f}"
 
     def _set_region_controls_times(self, start_time: float, stop_time: float) -> None:
         for line_edit, value in (
@@ -202,6 +202,22 @@ class StimArtefactViewer(EphysViewer):
             start_time, stop_time, region=True, region_controls=False
         )
         self.update_snapshot()
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent | None) -> None:
+        if event is None:
+            return
+
+        key = event.key()
+        if key == QtCore.Qt.Key.Key_Left:
+            self._on_prev_event_clicked()
+            event.accept()
+            return
+        if key == QtCore.Qt.Key.Key_Right:
+            self._on_next_event_clicked()
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
 
     def _on_undo_clicked(self) -> None:
         # Top of the stack is the current state; need a prior state to step to.
@@ -938,7 +954,20 @@ def stim_artefact_viewer(
 
     if channels is None:
         channels = trace_header(version=1)
-    assert "ids" in channels
+
+    if isinstance(channels, dict):
+        if "ids" not in channels:
+            n_channels = (
+                data.shape[0]
+                if data is not None
+                else len(channels.get("receiver_line", []))
+            )
+            channels = {**channels, "ids": np.arange(n_channels)}
+    else:
+        if "ids" not in channels:
+            n_channels = data.shape[0] if data is not None else len(channels)
+            channels = channels.copy()
+            channels["ids"] = np.arange(n_channels)
 
     if data is not None:
         if ev.fs is not None:

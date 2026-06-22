@@ -712,7 +712,8 @@ def viewephys(
     if data is not None:
         ev.model.set_data(data.T * a_scalar, si=1 / fs, header=channels, t0=t0, taxis=0)
         ev.ctrl.set_model()
-        ev.plot_events_as_regions()
+        if hasattr(ev, "plot_events_as_regions"):
+            ev.plot_events_as_regions()
 
     if br is not None and "atlas_id" in channels:
         _, ir = ismember(channels["atlas_id"], br.id)

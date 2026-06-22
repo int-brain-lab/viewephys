@@ -352,6 +352,40 @@ def test_stim_event_count_label_updates_on_edit_actions(
     window.deleteLater()
 
 
+def test_stim_keyboard_shortcuts_navigate_events(qtbot, synthetic_seis, tmp_path):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10, 30],
+            "end_sample": [20, 40],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_stim_keyboard_shortcuts_navigate_events",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+    window.setFocus()
+
+    assert window.selected_event_idx == 0
+
+    qtbot.keyClick(window, QtCore.Qt.Key_Right)
+    assert window.selected_event_idx == 1
+
+    qtbot.keyClick(window, QtCore.Qt.Key_Left)
+    assert window.selected_event_idx == 0
+
+    window.close()
+    window.deleteLater()
+
+
 def test_stim_save_status_label_shows_after_successful_save(
     qtbot, synthetic_seis, tmp_path
 ):
@@ -416,7 +450,7 @@ def test_stim_region_change_status_updates_after_first_save_or_load(
     window._on_add_event_clicked()
     assert window.regions_changed_since_last_save == 1
     assert window.label_stim_region_change_status.isVisible()
-    assert window.label_stim_region_change_status.text() == "Edits since last save: 1"
+    assert window.label_stim_region_change_status.text() == "Events since saved: 1"
 
     window._on_save_clicked()
     assert window.regions_changed_since_last_save == 0
