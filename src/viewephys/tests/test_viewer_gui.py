@@ -315,6 +315,41 @@ def test_stim_region_lineedits_apply_first_time_offset(qtbot, synthetic_seis, tm
     window.deleteLater()
 
 
+def test_stim_event_count_label_updates_on_edit_actions(qtbot, synthetic_seis, tmp_path):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10],
+            "end_sample": [20],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_stim_event_count_label_updates_on_edit_actions",
+    )
+    qtbot.addWidget(window)
+
+    assert window.groupBox_region_select.title() == "Region Select (1 events)"
+
+    window._on_add_event_clicked()
+    assert window.groupBox_region_select.title() == "Region Select (2 events)"
+
+    window.events.to_csv(window.events_path, index=False)
+    window._on_del_event_clicked()
+    assert window.groupBox_region_select.title() == "Region Select (1 events)"
+
+    window._on_load_clicked()
+    assert window.groupBox_region_select.title() == "Region Select (2 events)"
+
+    window.close()
+    window.deleteLater()
+
+
 def test_jump_to_time_clamps_out_of_range(jump_window, qtbot):
     window = jump_window
     max_first = max(0, int(window.data.get_num_samples()) - window.window_length_n)

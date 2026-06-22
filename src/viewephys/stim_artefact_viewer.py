@@ -58,6 +58,7 @@ class StimArtefactViewer(EphysViewer):
         self.events_path = events_path
         self.events = pd.read_csv(events_path)
         self._populate_region_select()
+        self._update_event_count_label()
         self._fill_region_controls_lineedits()
 
         # For undo/redo, for now we just take snapshots of the
@@ -290,11 +291,15 @@ class StimArtefactViewer(EphysViewer):
         self._repopulate_event_widgets()
         self.update_snapshot()
 
+    def _update_event_count_label(self) -> None:
+        self.groupBox_region_select.setTitle(f"Region Select ({len(self.events)} events)")
+
     def _repopulate_event_widgets(self) -> None:
         self.plot_events_as_regions()
         self._populate_region_select()
         self._set_event_combo_index(self.selected_event_idx)
         self._fill_region_controls_lineedits()
+        self._update_event_count_label()
 
     # can centralise this somwehow?
     @staticmethod
