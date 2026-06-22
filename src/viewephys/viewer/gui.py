@@ -202,6 +202,7 @@ class EasyQC(QtWidgets.QMainWindow):
         self.comboBox_header.currentTextChanged.connect(self.ctrl.set_header)
         self.viewBox_seismic.sigRangeChanged.connect(self.on_sigRangeChanged)
         self.horizontalScrollBar.valueChanged.connect(self.on_horizontalSliderChange)
+        self.verticalScrollBar.setInvertedAppearance(True)
         self.verticalScrollBar.valueChanged.connect(self.on_verticalSliderChange)
         self.radio_density.toggled.connect(
             lambda checked: checked and self.set_display_mode(DISPLAY_MODE_DENSITY)
