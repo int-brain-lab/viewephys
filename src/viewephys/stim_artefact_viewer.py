@@ -49,6 +49,8 @@ class StimArtefactViewer(EphysViewer):
         # Timestamp of sample 0; the events file stores sample indices, which
         # map onto the recording time axis as ``sample / fs + first_time``.
         self.first_time = first_time
+        self._context_menu_region_center_time: float | None = None
+        self._init_region_context_menu()
         self.extend_gui()
         self._event_regions: list[pg.LinearRegionItem] = []
         self._visible_event_indices: list[int] = []
@@ -96,6 +98,21 @@ class StimArtefactViewer(EphysViewer):
 
     def _seconds_to_samples(self, seconds):
         return seconds_to_samples(seconds, self.fs, self.first_time)
+
+    def _init_region_context_menu(self) -> None:
+        self.viewBox_seismic.menu.addSeparator()
+        action = QtWidgets.QAction("Add Region", self.viewBox_seismic.menu)
+        action.triggered.connect(self._on_add_region_menu_clicked)
+        self.viewBox_seismic.menu.addAction(action)
+
+    def mouseClick(self, event) -> None:
+        if event.button() == QtCore.Qt.MouseButton.RightButton:
+            point = self.viewBox_seismic.mapSceneToView(event.scenePos())
+            self._context_menu_region_center_time = float(point.x())
+        super().mouseClick(event)
+
+    def _on_add_region_menu_clicked(self) -> None:
+        self._on_add_event_clicked(self._context_menu_region_center_time)
 
     def update_snapshot(self):
         self.events_snapshots.append(
@@ -305,13 +322,15 @@ class StimArtefactViewer(EphysViewer):
                 return int(ev_idx)
         return len(self.events)
 
-    def _on_add_event_clicked(self) -> None:
+    def _on_add_event_clicked(self, center_time: float | None = None) -> None:
         # Placing the event in the current view needs model timing (set with data).
         if self.model.data is None:
             return
 
         xmin, xmax = self.viewBox_seismic.viewRange()[0]
-        mid_time = (xmin + xmax) / 2
+        if isinstance(center_time, bool):
+            center_time = None
+        mid_time = (xmin + xmax) / 2 if center_time is None else float(center_time)
         half_width = (xmax - xmin) * 0.01
 
         start_sample = self._seconds_to_samples(mid_time - half_width)
