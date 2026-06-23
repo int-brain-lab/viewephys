@@ -5,10 +5,11 @@ from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
-from qtpy import QtCore, QtGui, QtWidgets, uic
+from qtpy import QtCore, QtGui, QtWidgets
 
 from . import qt
 from .pgtools import ImShowSpectrogram
+from .view import Ui_MainWindow
 
 PARAMS_TRACE_PLOTS = {
     "neighbors": 2,
@@ -140,7 +141,8 @@ class EasyQC(QtWidgets.QMainWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        uic.loadUi(Path(__file__).with_name("view.ui"), self)
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
 
         self.layers = {}
         self.model = Model(None, None)
