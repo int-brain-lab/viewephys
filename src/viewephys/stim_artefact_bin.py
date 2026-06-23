@@ -1,3 +1,4 @@
+import warnings
 from contextlib import suppress
 from pathlib import Path
 
@@ -123,10 +124,15 @@ class StimArtefactBinViewer(EphysBinViewer):
                     a_scalar=A_SCALAR,
                     data_stim_removed=data_stim_removed,
                 )
-                with suppress(TypeError):
-                    viewer.request_jump_to_time.disconnect(
-                        self.on_stim_viewer_jump_requested
-                    )
+                # For PySide6 this is a warning
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", RuntimeWarning)
+
+                    with suppress(TypeError):
+                        # but for pyqt5 its an error
+                        viewer.request_jump_to_time.disconnect(
+                            self.on_stim_viewer_jump_requested
+                        )
                 viewer.request_jump_to_time.connect(self.on_stim_viewer_jump_requested)
 
             else:
