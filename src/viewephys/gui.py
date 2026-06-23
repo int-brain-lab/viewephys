@@ -23,7 +23,6 @@ from viewephys.viewer.qt import create_app
 
 T_SCALAR = 1  # defaults s for user side
 A_SCALAR = 1e6  # defaults V for user side
-NSAMP_CHUNK = 10000  # window length in samples
 N_SAMPLES_INIT = 2000  # number of samples in the manual pick array
 
 PICK_COLOR = (0, 255, 255)
@@ -63,6 +62,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.setWindowIcon(
             QtGui.QIcon(str(Path(__file__).parent.joinpath("viewephys.svg")))
         )
+        self.window_length_n = 10000  # window length in samples
+
         self.actionopen.triggered.connect(self.open_file)
         self.actionopen_live_recording.triggered.connect(self.open_file_live)
         self.horizontalSlider.setMinimum(0)
@@ -73,11 +74,23 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.horizontalSlider.valueChanged.connect(self.on_horizontalSliderValueChanged)
         validator = QtGui.QDoubleValidator(0.0, 1e12, 6, self.lineEdit_jumpTime)
         validator.setNotation(QtGui.QDoubleValidator.StandardNotation)
+
         # To handle dot as decimal separator regardless of user locale
         validator.setLocale(QtCore.QLocale.c())
         self.lineEdit_jumpTime.setValidator(validator)
         self.lineEdit_jumpTime.returnPressed.connect(self.on_jumpToTimeRequested)
+        # Window size: 0–3600 s (1-hour cap), 2 dp to match the display format
+        validator_window = QtGui.QDoubleValidator(
+            0.0, 3600.0, 2, self.lineEdit_windowSize
+        )
+        validator_window.setNotation(QtGui.QDoubleValidator.StandardNotation)
+        validator_window.setLocale(QtCore.QLocale.c())
+        self.lineEdit_windowSize.setValidator(validator_window)
+        self.lineEdit_windowSize.returnPressed.connect(
+            self.on_lineEdit_windowSizeChanged
+        )
         self.label_smin.setText("0")
+
         self._update_time_label()
         self.show()
 
@@ -137,11 +150,19 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         sampling_frequency = self.data.get_sampling_frequency()
 
         # enable and set slider, based on the number of samples in the entire file
-        self.horizontalSlider.setMaximum(int(np.floor(num_samples / NSAMP_CHUNK)))
-        tmax = np.floor(num_samples / NSAMP_CHUNK) * NSAMP_CHUNK / sampling_frequency
+        self.horizontalSlider.setMaximum(
+            int(np.floor(num_samples / self.window_length_n))
+        )
+        tmax = (
+            np.floor(num_samples / self.window_length_n)
+            * self.window_length_n
+            / sampling_frequency
+        )
         self.label_smax.setText(f"{tmax:0.2f}s")
 
         tlabel = self._create_top_label()
+        self.update_slider_limits()
+
         self.label.setText(tlabel)
 
         self.horizontalSlider.setValue(0)
@@ -150,6 +171,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.lineEdit_jumpTime.setEnabled(True)
         self._update_time_label()
         self.on_horizontalSliderReleased()
+        self.lineEdit_windowSize.setEnabled(True)
+        self.update_window_lineedit()
 
     def _setup_viewers_and_checkboxes(self) -> None:
         """Repopulate viewers/cbs based on the current data model."""
@@ -215,8 +238,42 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         return tlabel
 
     def on_horizontalSliderValueChanged(self) -> None:
-        self._first_sample = int(self.horizontalSlider.value()) * NSAMP_CHUNK
+        self._first_sample = int(self.horizontalSlider.value()) * self.window_length_n
         self._update_time_label()
+
+    def on_lineEdit_windowSizeChanged(self) -> None:
+        """Resize the display window from the seconds value typed in the line edit."""
+        t = self._get_float_from_lineedit(self.lineEdit_windowSize)
+
+        if t is None:
+            return
+
+        self.window_length_n = max(
+            1, int(round(t * self.data.get_sampling_frequency()))
+        )
+        self.update_slider_limits()
+        self.update_window_lineedit()
+        self.on_horizontalSliderValueChanged()
+        self.on_horizontalSliderReleased()
+
+    def update_window_lineedit(self) -> None:
+        """Refresh the window-size line edit to reflect the current window_length_n."""
+        if not hasattr(self, "data"):
+            return
+        self.lineEdit_windowSize.setText(
+            f"{self.window_length_n / self.data.get_sampling_frequency():0.2f}"
+        )
+
+    def update_slider_limits(self) -> None:
+        """Recompute the slider maximum and tmax label from window_length_n."""
+        if not hasattr(self, "data"):
+            return
+        num_samples = self.data.get_num_samples()
+        sampling_frequency = self.data.get_sampling_frequency()
+        n_chunks = int(np.floor(num_samples / self.window_length_n))
+        self.horizontalSlider.setMaximum(n_chunks)
+        tmax = n_chunks * self.window_length_n / sampling_frequency
+        self.label_smax.setText(f"{tmax:0.2f}s")
 
     def _update_time_label(self) -> None:
         if not hasattr(self, "data"):
@@ -225,17 +282,24 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         tcur = self._first_sample / self.data.get_sampling_frequency()
         self.lineEdit_jumpTime.setText(f"{tcur:0.6f}")
 
+    def _get_float_from_lineedit(self, lineedit: QtWidgets.QLineEdit):
+        text = lineedit.text().strip()
+        if text == "" or not hasattr(self, "data"):
+            return
+        try:
+            t = float(text)
+            return t
+        except ValueError:
+            return
+
     def on_jumpToTimeRequested(self) -> None:
         """Jump to the user-typed time, centering the loaded window on it.
 
         The slider thumb is moved to the nearest chunk for visual feedback only.
         """
-        text = self.lineEdit_jumpTime.text().strip()
-        if text == "" or not hasattr(self, "data"):
-            return
-        try:
-            t = float(text)
-        except ValueError:
+        t = self._get_float_from_lineedit(self.lineEdit_jumpTime)
+
+        if t is None:
             return
 
         sampling_frequency = self.data.get_sampling_frequency()
@@ -243,12 +307,13 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
         requested_sample = int(round(t * sampling_frequency))
         requested_sample = max(0, min(requested_sample, int(num_samples) - 1))
-        max_first = max(0, int(num_samples) - NSAMP_CHUNK)
-        first_sample = requested_sample - NSAMP_CHUNK // 2
+        max_first = max(0, int(num_samples) - self.window_length_n)
+        first_sample = requested_sample - self.window_length_n // 2
+
         first_sample = max(0, min(first_sample, max_first))
         center_time = requested_sample / sampling_frequency
         self._first_sample = first_sample
-        slider_value = int(round(first_sample / NSAMP_CHUNK))
+        slider_value = int(round(first_sample / self.window_length_n))
         slider_value = max(0, min(slider_value, self.horizontalSlider.maximum()))
         # Move slider for visual feedback without letting valueChanged
         # overwrite the exact first_sample we just set.
@@ -283,7 +348,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 prev_ranges[k] = None
 
         first = int(self._first_sample)
-        last = first + int(NSAMP_CHUNK)
+        last = first + int(self.window_length_n)
         t0 = first / self.data.get_sampling_frequency()
 
         # Old data flow preserved: fetch raw once, branch per preprocessing step.
@@ -291,8 +356,6 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         # (matching SI semantics) but the performance impact is small for short
         # snippets and the shared raw buffer avoids redundant disk reads.
         raw = self.data.get_raw(first, last)
-
-        # get parameters for both AP and LFP band
 
         # For each preprocessing step, create an EphysViewer
         for k in self.viewers:
