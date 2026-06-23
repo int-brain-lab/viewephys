@@ -372,6 +372,7 @@ def test_window_size_change_displays_different_data(qtbot):
     window = EphysBinViewer()
     qtbot.addWidget(window)
     window.data = SpikeGLXDataModel(_RandomFakeArraySR())
+    window._setup_viewers_and_checkboxes()
     window.update_slider_limits()
     for checkbox in window.cbs.values():
         checkbox.setChecked(False)
