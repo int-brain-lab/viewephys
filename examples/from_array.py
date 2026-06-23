@@ -3,6 +3,8 @@ This example shows how to compare the output of different
 SpikeInterface preprocessing steps in viewephys.
 """
 
+from pathlib import Path
+
 import spikeinterface.extractors as si_extractors
 import spikeinterface.preprocessing as si_prepro
 
@@ -12,7 +14,7 @@ from viewephys.gui import create_app, viewephys
 app = create_app()
 
 # Load and preprocess data using spikeinterface
-raw_data_path = r"C:\Users\Joe\work\git-repos\viewephys\examples\example_bin"
+raw_data_path = Path(__file__).parent / "example_bin"
 
 rec_raw = si_extractors.read_spikeglx(raw_data_path, stream_id="imec0.ap")
 fs = rec_raw.get_sampling_frequency()
