@@ -141,6 +141,7 @@ class EasyQC(QtWidgets.QMainWindow):
         self.layers = {}
         self.model = Model(None, None)
         self._display_mode = DISPLAY_MODE_DENSITY
+        self._auto_downsample = self.actionAutoDownsample.isChecked()
         self._ctrl_image = ControllerImage(self)
         self._ctrl_wiggle = ControllerWiggle(self)
         icon_path = Path(__file__).resolve().parent.parent.joinpath("viewephys.svg")
@@ -155,6 +156,7 @@ class EasyQC(QtWidgets.QMainWindow):
         self.plotItem_seismic.addItem(self.plotDataItem_wiggle)
         self.viewBox_seismic = self.plotItem_seismic.getPlotItem().getViewBox()
         self._init_menu()
+        self.setColorMap("CET-D1")
         self._init_cmenu()
         self.plotDataItem_header_h = pg.PlotDataItem()
         self.plotItem_header_h.addItem(self.plotDataItem_header_h)
@@ -205,7 +207,14 @@ class EasyQC(QtWidgets.QMainWindow):
             lambda checked: checked and self.set_display_mode(DISPLAY_MODE_WIGGLE)
         )
 
+    def on_action_auto_downsample(self, checked: bool) -> None:
+        """Toggle anti-aliasing downsampling on the seismic image item."""
+        self._auto_downsample = checked
+        if self._display_mode == DISPLAY_MODE_DENSITY:
+            self.ctrl.redraw()
+
     def _init_menu(self):
+        self.actionAutoDownsample.toggled.connect(self.on_action_auto_downsample)
         self.actionColormap_CET_D6.triggered.connect(lambda: self.setColorMap("CET-D6"))
         self.actionColormap_CET_D1.triggered.connect(lambda: self.setColorMap("CET-D1"))
         self.actionColormap_CET_L2.triggered.connect(lambda: self.setColorMap("CET-L2"))
@@ -414,6 +423,16 @@ class EasyQC(QtWidgets.QMainWindow):
             cmap = pg.colormap.getFromMatplotlib(cmap)
         self.imageItem_seismic.setColorMap(cmap)
 
+        action_map = {
+            "CET-D1": self.actionColormap_CET_D1,
+            "CET-D6": self.actionColormap_CET_D6,
+            "CET-L2": self.actionColormap_CET_L2,
+            "PuOr": self.actionColormap_MPL_PuOr,
+        }
+        cmap_name = cmap if isinstance(cmap, str) else getattr(cmap, "name", str(cmap))
+        for name, action in action_map.items():
+            action.setChecked(name == cmap_name)
+
     def set_display_mode(self, mode: str) -> None:
         if mode == self._display_mode:
             return
@@ -558,7 +577,7 @@ class Controller(abc.ABC):
         for i, eqc in enumerate(eqcs):
             if eqc is self.view:
                 continue
-            eqc.setColorMap(self.view.imageItem_seismic.getColorMap() or "CET-L2")
+            eqc.setColorMap(self.view.imageItem_seismic.getColorMap() or "CET-D1")
             eqc.setGeometry(self.view.geometry())
             eqc.ctrl.set_gain(self.gain)
             eqc.plotItem_seismic.setXLink(self.view.plotItem_seismic)
@@ -730,11 +749,17 @@ class ControllerImage(Controller):
         if self.model.taxis == 0:
             xlim, ylim = (tlim, clim)
             transform = [si, 0.0, 0.0, 0.0, 1, 0.0, t0 - si / 2, x0 - 0.5, 1.0]
-            self.view.imageItem_seismic.setImage(self.model.data[:, self.trace_indices])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[:, self.trace_indices],
+                autoDownsample=self.view._auto_downsample,
+            )
         elif self.model.taxis == 1:
             xlim, ylim = (clim, tlim)
             transform = [1.0, 0.0, 0.0, 0.0, si, 0.0, x0 - 0.5, t0 - si / 2, 1.0]
-            self.view.imageItem_seismic.setImage(self.model.data[self.trace_indices, :])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[self.trace_indices, :],
+                autoDownsample=self.view._auto_downsample,
+            )
             self.view.plotItem_seismic.invertY()
         else:
             raise ValueError("taxis must be 0 (horizontal axis) or 1 (vertical axis)")
@@ -752,9 +777,15 @@ class ControllerImage(Controller):
 
     def redraw(self):
         if self.model.taxis == 1:
-            self.view.imageItem_seismic.setImage(self.model.data[self.trace_indices, :])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[self.trace_indices, :],
+                autoDownsample=self.view._auto_downsample,
+            )
         elif self.model.taxis == 0:
-            self.view.imageItem_seismic.setImage(self.model.data[:, self.trace_indices])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[:, self.trace_indices],
+                autoDownsample=self.view._auto_downsample,
+            )
         self.set_header()
         self.set_gain()
 
@@ -762,8 +793,8 @@ class ControllerImage(Controller):
         if gain is None:
             gain = self.gain
         levels = 10 ** (gain / 20) * 4 * np.array([-1, 1])
-        self.view.imageItem_seismic.setLevels(levels)
-        self.gain_line_edit.setText(f"{gain:.1f}")
+        self.view.imageItem_seismic.setLevels(levels, update=True)
+        self.gain_line_edit.setText(f"{gain:.3f}")
 
 
 def viewseis(w=None, si=0.002, h=None, title=None, t0=0, x0=0, taxis=1):

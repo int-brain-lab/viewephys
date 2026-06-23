@@ -214,20 +214,32 @@ class Ui_MainWindow:
         window.actionopen.setObjectName("actionopen")
 
         window.actionColormap_CET_L2 = QtWidgets.QAction(window)
-        window.actionColormap_CET_L2.setText("CET_L2")
+        window.actionColormap_CET_L2.setText("CET-L2")
         window.actionColormap_CET_L2.setObjectName("actionColormap_CET_L2")
 
         window.actionColormap_MPL_PuOr = QtWidgets.QAction(window)
-        window.actionColormap_MPL_PuOr.setText("MPL_PuOr")
+        window.actionColormap_MPL_PuOr.setText("PuOr")
         window.actionColormap_MPL_PuOr.setObjectName("actionColormap_MPL_PuOr")
 
         window.actionColormap_CET_D1 = QtWidgets.QAction(window)
-        window.actionColormap_CET_D1.setText("CET_D1")
+        window.actionColormap_CET_D1.setText("CET-D1")
         window.actionColormap_CET_D1.setObjectName("actionColormap_CET_D1")
+        window.actionColormap_CET_D1.setCheckable(True)
+        window.actionColormap_CET_D1.setChecked(True)
 
         window.actionColormap_CET_D6 = QtWidgets.QAction(window)
-        window.actionColormap_CET_D6.setText("CET_D6")
+        window.actionColormap_CET_D6.setText("CET-D6")
         window.actionColormap_CET_D6.setObjectName("actionColormap_CET_D6")
+        window.actionColormap_CET_D6.setCheckable(True)
+
+        window.actionColormap_CET_L2.setCheckable(True)
+        window.actionColormap_MPL_PuOr.setCheckable(True)
+
+        window.actionAutoDownsample = QtWidgets.QAction(window)
+        window.actionAutoDownsample.setCheckable(True)
+        window.actionAutoDownsample.setChecked(True)
+        window.actionAutoDownsample.setText("Auto Downsample")
+        window.actionAutoDownsample.setObjectName("actionAutoDownsample")
 
         window.menufile.addAction(window.actionopen)
         window.menuColormaps.addAction(window.actionColormap_CET_L2)
@@ -236,6 +248,7 @@ class Ui_MainWindow:
         window.menuColormaps.addAction(window.actionColormap_CET_D6)
 
         window.menuView.addAction(window.menuColormaps.menuAction())
+        window.menuView.addAction(window.actionAutoDownsample)
         window.menubar.addAction(window.menufile.menuAction())
         window.menubar.addAction(window.menuView.menuAction())
         QtCore.QMetaObject.connectSlotsByName(window)
