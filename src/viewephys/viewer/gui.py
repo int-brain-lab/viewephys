@@ -155,6 +155,7 @@ class EasyQC(QtWidgets.QMainWindow):
         background_color = self.palette().color(self.backgroundRole())
         self.plotItem_seismic.setAspectLocked(False)
         self.imageItem_seismic = pg.ImageItem()
+        self.imageItem_seismic.setColorMap("CET-D1")
         self.plotItem_seismic.setBackground(background_color)
         self.plotItem_seismic.addItem(self.imageItem_seismic)
         self.plotDataItem_wiggle = pg.PlotDataItem(visible=False)
@@ -326,7 +327,7 @@ class EasyQC(QtWidgets.QMainWindow):
             self.viewBox_seismic.setYRange(yr[0], yr[1], padding=0)
 
     def on_sigRangeChanged(self, _):
-        def set_scroll(scrollbar, current_range, bounds):
+        def set_scroll(scrollbar, current_range, bounds, *, invert=False):
             current_span = current_range[1] - current_range[0]
             doclength = bounds[1] - bounds[0]
             if doclength <= 0:
@@ -345,6 +346,8 @@ class EasyQC(QtWidgets.QMainWindow):
             single_step = max(1, page_step // 10)
             value = int((current_range[0] - bounds[0]) / doclength * 65536)
             value = max(0, min(maximum, value))
+            if invert:
+                value = maximum - value
 
             # Keep plot -> scrollbar synchronization from re-triggering
             # scrollbar -> plot updates.
@@ -360,7 +363,7 @@ class EasyQC(QtWidgets.QMainWindow):
         xr, yr = self.viewBox_seismic.viewRange()
         xl, yl = self.ctrl.limits()
         set_scroll(self.horizontalScrollBar, xr, xl)
-        set_scroll(self.verticalScrollBar, yr, yl)
+        set_scroll(self.verticalScrollBar, yr, yl, invert=True)
 
     def on_horizontalSliderChange(self, _):
         bounds = self.ctrl.limits()[0]
@@ -376,10 +379,8 @@ class EasyQC(QtWidgets.QMainWindow):
     def on_verticalSliderChange(self, _):
         bounds = self.ctrl.limits()[1]
         current_range = self.viewBox_seismic.viewRange()[1]
-        y = (
-            float(self.verticalScrollBar.value()) / 65536 * (bounds[1] - bounds[0])
-            + bounds[0]
-        )
+        value = self.verticalScrollBar.maximum() - self.verticalScrollBar.value()
+        y = float(value) / 65536 * (bounds[1] - bounds[0]) + bounds[0]
         self.viewBox_seismic.setYRange(
             y, y + current_range[1] - current_range[0], padding=0
         )
@@ -459,6 +460,7 @@ class EasyQC(QtWidgets.QMainWindow):
             )
             self.ctrl.set_gain()
             self.ctrl.set_header()
+        self.on_sigRangeChanged(None)
 
 
 class Controller(abc.ABC):
@@ -508,6 +510,55 @@ class Controller(abc.ABC):
             current_layer["layer"].clear()
             self.view.plotItem_seismic.removeItem(current_layer["layer"])
             self.view.layers.pop(label)
+
+    @property
+    def visible_trace_indices(self) -> np.ndarray:
+        if self.trace_indices is None:
+            return np.arange(self.model.ntr)
+        return np.asarray(self.trace_indices)
+
+    def _time_bounds(self) -> list[float]:
+        half_sample = self.model.si / 2
+        return [
+            self.model.t0 - half_sample,
+            self.model.t0 + (self.model.ns - 0.5) * self.model.si,
+        ]
+
+    def _channel_bounds(self) -> list[float]:
+        return [
+            self.model.x0 - 0.5,
+            self.model.x0 + int(self.visible_trace_indices.size) - 0.5,
+        ]
+
+    @staticmethod
+    def _clamp_range(
+        current_range: list[float], bounds: list[float]
+    ) -> tuple[float, float]:
+        current_span = current_range[1] - current_range[0]
+        doclength = bounds[1] - bounds[0]
+        if doclength <= 0 or current_span >= doclength:
+            return bounds[0], bounds[1]
+
+        start = max(bounds[0], min(current_range[0], bounds[1] - current_span))
+        return start, start + current_span
+
+    def _apply_plot_limits(self, reset_viewbox: bool) -> None:
+        xlim, ylim = self.limits()
+        self.view.plotItem_header_h.setLimits(xMin=xlim[0], xMax=xlim[1])
+        self.view.plotItem_header_v.setLimits(yMin=ylim[0], yMax=ylim[1])
+        self.view.plotItem_seismic.setLimits(
+            xMin=xlim[0], xMax=xlim[1], yMin=ylim[0], yMax=ylim[1]
+        )
+
+        if reset_viewbox:
+            xr, yr = xlim, ylim
+        else:
+            current_x, current_y = self.view.viewBox_seismic.viewRange()
+            xr = self._clamp_range(current_x, xlim)
+            yr = self._clamp_range(current_y, ylim)
+
+        self.view.viewBox_seismic.setXRange(*xr, padding=0)
+        self.view.viewBox_seismic.setYRange(*yr, padding=0)
 
     def _add_plotitem(
         self,
@@ -559,10 +610,13 @@ class Controller(abc.ABC):
         return ix, iy
 
     def limits(self):
-        ixlim = [0, self.model.nx]
-        iylim = [0, self.model.ny]
-        x, y, _ = np.matmul(self.transform, np.c_[ixlim, iylim, [1, 1]].T)
-        return x, y
+        if self.model.data is None or not hasattr(self.model, "ns"):
+            return [0.0, 1.0], [0.0, 1.0]
+        time_bounds = self._time_bounds()
+        channel_bounds = self._channel_bounds()
+        if self.model.taxis == 0:
+            return time_bounds, channel_bounds
+        return channel_bounds, time_bounds
 
     def propagate(self, explode=False):
         eqcs = self.view._instances()
@@ -679,40 +733,48 @@ class Controller(abc.ABC):
 
 
 class ControllerWiggle(Controller):
-    def _update_plotItem(self, tlim=None, clim=None):
-        if self.model.taxis == 0:
-            xlim, ylim = (tlim, clim)
-            trace_indices = self.trace_indices
-            if trace_indices is None:
-                trace_indices = np.arange(self.model.ntr)
-            data = self.model.data[:, trace_indices]
-            ntr = int(trace_indices.size)
-            wiggle_y = np.r_[data, np.ones(ntr)[np.newaxis, :]]
-            wiggle_y = wiggle_y / (10 ** (self.gain / 20))
-            if self.view._auto_space_wiggle:
-                max_width = np.max(np.max(wiggle_y, axis=0) - np.min(wiggle_y, axis=0))
-                wiggle_y += (np.arange(ntr) * max_width)[np.newaxis, :]
-                wiggle_y /= max_width
-            else:
-                wiggle_y += np.arange(ntr)[np.newaxis, :]
+    def _channel_bounds(self) -> list[float]:
+        if not self.view._auto_space_wiggle:
+            return super()._channel_bounds()
 
-            self.view.plotDataItem_wiggle.setData(
-                x=np.tile(np.r_[self.tscale, np.nan], ntr),
-                y=wiggle_y.T.flatten(),
-            )
+        _, y = self.compute_wiggle_xy(self.model.data)
+        return [float(np.min(y)), float(np.max(y))]
+
+    def compute_wiggle_xy(self, data):
+        """Compute the wiggle (x, y) curve for an arbitrary data array.
+
+        Uses the same gain, trace selection and auto-spacing as the primary
+        trace so an overlay rendered from this stays locked to it.
+        """
+        trace_indices = self.trace_indices
+        if trace_indices is None:
+            trace_indices = np.arange(self.model.ntr)
+        d = data[:, trace_indices]
+        ntr = int(trace_indices.size)
+        wiggle_y = np.r_[d, np.ones(ntr)[np.newaxis, :]]
+        wiggle_y = wiggle_y / (10 ** (self.gain / 20))
+        if self.view._auto_space_wiggle:
+            max_width = np.max(np.max(wiggle_y, axis=0) - np.min(wiggle_y, axis=0))
+            wiggle_y += (np.arange(ntr) * max_width)[np.newaxis, :]
+            wiggle_y /= max_width
+        else:
+            wiggle_y += np.arange(ntr)[np.newaxis, :]
+        x = np.tile(np.r_[self.tscale, np.nan], ntr)
+        return x, wiggle_y.T.flatten()
+
+    def _update_plotItem(self, tlim=None, clim=None):
+        x0, t0, si = self.model.x0, self.model.t0, self.model.si
+        if self.model.taxis == 0:
+            x, y = self.compute_wiggle_xy(self.model.data)
+            self.view.plotDataItem_wiggle.setData(x=x, y=y)
+            transform = [si, 0.0, 0.0, 0.0, 1, 0.0, t0 - si / 2, x0 - 0.5, 1.0]
         elif self.model.taxis == 1:
-            xlim, ylim = (clim, tlim)
+            transform = [1.0, 0.0, 0.0, 0.0, si, 0.0, x0 - 0.5, t0 - si / 2, 1.0]
         else:
             raise ValueError("taxis must be 0 (horizontal axis) or 1 (vertical axis)")
-        if tlim is not None and clim is not None:  # TOASK: what case is this?
-            self.view.plotItem_header_h.setLimits(xMin=xlim[0], xMax=xlim[1])
-            self.view.plotItem_header_v.setLimits(yMin=ylim[0], yMax=ylim[1])
-            self.view.plotItem_seismic.setLimits(
-                xMin=xlim[0], xMax=xlim[1], yMin=ylim[0], yMax=ylim[1]
-            )
-            xlim, ylim = self.limits()
-            self.view.viewBox_seismic.setXRange(*xlim, padding=0)
-            self.view.viewBox_seismic.setYRange(*ylim, padding=0)
+        self.transform = np.array(transform).reshape((3, 3)).T
+        if tlim is not None or clim is not None:
+            self._apply_plot_limits(reset_viewbox=tlim is not None and clim is not None)
 
     def set_gain(self, gain=None):
         if gain is None:
@@ -735,17 +797,10 @@ class ControllerImage(Controller):
             self.view.plotItem_seismic.invertY()
         else:
             raise ValueError("taxis must be 0 (horizontal axis) or 1 (vertical axis)")
-        if tlim is not None and clim is not None:
-            self.transform = np.array(transform).reshape((3, 3)).T
-            self.view.imageItem_seismic.setTransform(QtGui.QTransform(*transform))
-            self.view.plotItem_header_h.setLimits(xMin=xlim[0], xMax=xlim[1])
-            self.view.plotItem_header_v.setLimits(yMin=ylim[0], yMax=ylim[1])
-            self.view.plotItem_seismic.setLimits(
-                xMin=xlim[0], xMax=xlim[1], yMin=ylim[0], yMax=ylim[1]
-            )
-            xlim, ylim = self.limits()
-            self.view.viewBox_seismic.setXRange(*xlim, padding=0)
-            self.view.viewBox_seismic.setYRange(*ylim, padding=0)
+        self.transform = np.array(transform).reshape((3, 3)).T
+        self.view.imageItem_seismic.setTransform(QtGui.QTransform(*transform))
+        if tlim is not None or clim is not None:
+            self._apply_plot_limits(reset_viewbox=tlim is not None and clim is not None)
 
     def redraw(self):
         if self.model.taxis == 1:

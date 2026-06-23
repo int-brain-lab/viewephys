@@ -1,9 +1,11 @@
 import numpy as np
+import pandas as pd
 import pytest
 from qtpy import QtCore, QtWidgets
 
 from viewephys.data_model import SpikeGLXDataModel
 from viewephys.gui import EphysBinViewer, create_app, viewephys
+from viewephys.stim_artefact_viewer import stim_artefact_viewer
 from viewephys.tests.test_viewer_helpers import synthetic_seismic_data
 from viewephys.viewer.gui import EasyQC, viewseis
 
@@ -65,6 +67,138 @@ def test_toggle_density_wiggle(view_with_data, qtbot):
     assert window.imageItem_seismic.image is None
     qtbot.mouseClick(window.radio_density, QtCore.Qt.LeftButton)
     assert window._display_mode == "density"
+
+
+def test_viewer_wiggle_limits_match_density_time_bounds(
+    qtbot, synthetic_seis, tmp_path
+):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame({"start_sample": [10], "end_sample": [20]}).to_csv(
+        events_path, index=False
+    )
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_viewer_wiggle_limits_match_density_time_bounds",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+
+    density_xlim, _ = window.ctrl.limits()
+
+    qtbot.mouseClick(window.radio_wiggle, QtCore.Qt.LeftButton)
+    wiggle_xlim, _ = window.ctrl.limits()
+
+    assert wiggle_xlim == pytest.approx(density_xlim)
+
+    window.close()
+    window.deleteLater()
+
+
+def test_filtered_channel_limits_drive_scrollbars_across_modes(
+    qtbot, synthetic_seis, tmp_path
+):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame({"start_sample": [10], "end_sample": [20]}).to_csv(
+        events_path, index=False
+    )
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_filtered_channel_limits_drive_scrollbars_across_modes",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+
+    window._on_channels_none()
+    for row in range(3):
+        window.listWidget_stim_channels.item(row).setSelected(True)
+    window._on_channels_apply()
+
+    np.testing.assert_array_equal(window.ctrl.trace_indices, np.array([0, 1, 2]))
+
+    _, density_ylim = window.ctrl.limits()
+    assert density_ylim == pytest.approx([-0.5, 2.5])
+    assert window.verticalScrollBar.maximum() == 0
+
+    qtbot.mouseClick(window.radio_wiggle, QtCore.Qt.LeftButton)
+
+    _, wiggle_ylim = window.ctrl.limits()
+    assert wiggle_ylim == pytest.approx([-0.5, 2.5])
+    assert window.verticalScrollBar.maximum() == 0
+
+    window.close()
+    window.deleteLater()
+
+
+def test_wiggle_auto_space_limits_follow_plotted_data(qtbot, synthetic_seis, tmp_path):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame({"start_sample": [10], "end_sample": [20]}).to_csv(
+        events_path, index=False
+    )
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_wiggle_auto_space_limits_follow_plotted_data",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+
+    window._on_channels_none()
+    for row in range(3):
+        window.listWidget_stim_channels.item(row).setSelected(True)
+    window._on_channels_apply()
+
+    qtbot.mouseClick(window.radio_wiggle, QtCore.Qt.LeftButton)
+    qtbot.mouseClick(window.checkbox_auto_space_wiggle, QtCore.Qt.LeftButton)
+
+    _, y = window.plotDataItem_wiggle.getData()
+    _, ylim = window.ctrl.limits()
+
+    assert ylim == pytest.approx([float(np.min(y)), float(np.max(y))])
+
+    window.close()
+    window.deleteLater()
+
+
+def test_vertical_scrollbar_up_moves_plot_up(view_with_data, qtbot):
+    window = view_with_data
+    bounds = window.ctrl.limits()[1]
+
+    window.viewBox_seismic.setYRange(bounds[0], bounds[0] + 50, padding=0)
+    qtbot.wait(10)
+
+    current_span = (
+        window.viewBox_seismic.viewRange()[1][1]
+        - window.viewBox_seismic.viewRange()[1][0]
+    )
+    expected_upper_start = bounds[1] - current_span
+
+    window.verticalScrollBar.setValue(0)
+    qtbot.wait(10)
+    upper_range = window.viewBox_seismic.viewRange()[1]
+    assert upper_range[0] == pytest.approx(expected_upper_start)
+    assert upper_range[1] == pytest.approx(bounds[1])
+
+    window.verticalScrollBar.setValue(window.verticalScrollBar.maximum())
+    qtbot.wait(10)
+    lower_range = window.viewBox_seismic.viewRange()[1]
+    assert lower_range[0] == pytest.approx(bounds[0])
 
 
 def test_sort_reorders_plotted_image_multiple_keys(view_with_data):
@@ -187,6 +321,8 @@ def jump_window(qtbot, monkeypatch):
     max_first = max(0, int(window.data.get_num_samples()) - window.window_length_n)
     window.horizontalSlider.setMaximum(max_first)
     window.horizontalSlider.setEnabled(True)
+    window.pushButton_previousWindow.setEnabled(True)
+    window.pushButton_nextWindow.setEnabled(True)
     window.lineEdit_jumpTime.setEnabled(True)
     monkeypatch.setattr(
         window, "on_horizontalSliderReleased", lambda center_time=None: None
@@ -247,6 +383,374 @@ def test_slider_drag_resets_first_sample_to_chunk(jump_window, qtbot):
     assert window.lineEdit_jumpTime.text() == (
         f"{1501 / window.data.get_sampling_frequency():0.6f}"
     )
+
+
+def test_window_step_buttons_move_slider_by_one_window(jump_window, qtbot, monkeypatch):
+    window = jump_window
+    reloads = []
+    monkeypatch.setattr(
+        window,
+        "on_horizontalSliderReleased",
+        lambda center_time=None: reloads.append(center_time),
+    )
+
+    window.horizontalSlider.setValue(2 * window.window_length_n)
+
+    qtbot.mouseClick(window.pushButton_previousWindow, QtCore.Qt.LeftButton)
+
+    assert window.horizontalSlider.value() == window.window_length_n
+    assert window._first_sample == window.window_length_n
+    assert reloads == [None]
+
+    qtbot.mouseClick(window.pushButton_nextWindow, QtCore.Qt.LeftButton)
+
+    assert window.horizontalSlider.value() == 2 * window.window_length_n
+    assert window._first_sample == 2 * window.window_length_n
+    assert reloads == [None, None]
+
+
+def test_stim_region_lineedits_fill_from_samples(qtbot, synthetic_seis, tmp_path):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10, 30],
+            "end_sample": [20, 50],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels=header,
+        events_path=events_path,
+        title="test_stim_region_lineedits_fill_from_samples",
+    )
+    qtbot.addWidget(window)
+
+    assert window.lineEdit_stim_t0.text() == "0.010000"
+    assert window.lineEdit_stim_t1.text() == "0.020000"
+
+    window.move_to_region(1)
+
+    assert window.lineEdit_stim_t0.text() == "0.030000"
+    assert window.lineEdit_stim_t1.text() == "0.050000"
+
+    window.close()
+    window.deleteLater()
+
+
+def test_stim_region_lineedits_apply_first_time_offset(qtbot, synthetic_seis, tmp_path):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10, 30],
+            "end_sample": [20, 50],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels=header,
+        events_path=events_path,
+        title="test_stim_region_lineedits_apply_first_time_offset",
+        first_time=5.0,
+    )
+    qtbot.addWidget(window)
+
+    # The recording starts at t=5s, so sample 10 maps to 5.010s.
+    assert window.lineEdit_stim_t0.text() == "5.010000"
+    assert window.lineEdit_stim_t1.text() == "5.020000"
+
+    window.move_to_region(1)
+
+    assert window.lineEdit_stim_t0.text() == "5.030000"
+    assert window.lineEdit_stim_t1.text() == "5.050000"
+
+    window.close()
+    window.deleteLater()
+
+
+def test_stim_event_count_label_updates_on_edit_actions(
+    qtbot, synthetic_seis, tmp_path
+):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10],
+            "end_sample": [20],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_stim_event_count_label_updates_on_edit_actions",
+    )
+    qtbot.addWidget(window)
+
+    assert window.groupBox_region_select.title() == "Region Select (1 events)"
+
+    window._on_add_event_clicked()
+    assert window.groupBox_region_select.title() == "Region Select (2 events)"
+
+    window.events.to_csv(window.events_path, index=False)
+    window._on_del_event_clicked()
+    assert window.groupBox_region_select.title() == "Region Select (1 events)"
+
+    window._on_load_clicked()
+    assert window.groupBox_region_select.title() == "Region Select (2 events)"
+
+    window.close()
+    window.deleteLater()
+
+
+def test_stim_add_event_inserts_by_time_and_selects_new_region(
+    qtbot, synthetic_seis, tmp_path
+):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10, 100, 1000],
+            "end_sample": [20, 110, 1010],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_stim_add_event_inserts_by_time_and_selects_new_region",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+    window.viewBox_seismic.setRange(xRange=(0.0, 1.0))
+
+    window._on_add_event_clicked()
+
+    assert window.selected_event_idx == 2
+    assert window.comboBox_stim_event_index.currentIndex() == 2
+    assert window.events["start_sample"].tolist()[:2] == [10, 100]
+    assert window.events["start_sample"].tolist()[-1] == 1000
+    assert window.events.loc[2, "start_sample"] > 100
+    assert window.events.loc[2, "start_sample"] < 1000
+
+    window.close()
+    window.deleteLater()
+
+
+def test_stim_context_menu_add_region_uses_clicked_center(
+    qtbot, synthetic_seis, tmp_path
+):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10, 100, 1000],
+            "end_sample": [20, 110, 1010],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_stim_context_menu_add_region_uses_clicked_center",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+    window.viewBox_seismic.setRange(xRange=(0.0, 1.0))
+
+    class RightClickEvent:
+        def button(self):
+            return QtCore.Qt.RightButton
+
+        def scenePos(self):
+            return window.viewBox_seismic.mapViewToScene(QtCore.QPointF(0.5, 1.0))
+
+        def double(self):
+            return False
+
+    assert "Add Region" in [
+        action.text() for action in window.viewBox_seismic.menu.actions()
+    ]
+
+    window.mouseClick(RightClickEvent())
+    window._on_add_region_menu_clicked()
+
+    new_event = window.events.loc[2]
+    midpoint_sample = (new_event["start_sample"] + new_event["end_sample"]) / 2
+    assert window.selected_event_idx == 2
+    assert midpoint_sample == pytest.approx(500)
+
+    window.close()
+    window.deleteLater()
+
+
+def test_stim_keyboard_shortcuts_navigate_events(qtbot, synthetic_seis, tmp_path):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10, 30],
+            "end_sample": [20, 40],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_stim_keyboard_shortcuts_navigate_events",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+    window.setFocus()
+
+    assert window.selected_event_idx == 0
+
+    qtbot.keyClick(window, QtCore.Qt.Key_Right)
+    assert window.selected_event_idx == 1
+
+    qtbot.keyClick(window, QtCore.Qt.Key_Left)
+    assert window.selected_event_idx == 0
+
+    window.close()
+    window.deleteLater()
+
+
+def test_stim_clicking_region_selects_it(qtbot, synthetic_seis, tmp_path):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10, 30],
+            "end_sample": [20, 40],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_stim_clicking_region_selects_it",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+
+    assert window.selected_event_idx == 0
+
+    region = window.get_visible_region(1)
+    assert region is not None
+
+    region.sigRegionClicked.emit()
+
+    assert window.selected_event_idx == 1
+    assert window.comboBox_stim_event_index.currentIndex() == 1
+
+    window.close()
+    window.deleteLater()
+
+
+def test_stim_save_status_label_shows_after_successful_save(
+    qtbot, synthetic_seis, tmp_path
+):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10],
+            "end_sample": [20],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_stim_save_status_label_shows_after_successful_save",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+
+    assert not window.label_stim_save_status.isVisible()
+
+    window._on_save_clicked()
+
+    assert window.label_stim_save_status.isVisible()
+    assert window.label_stim_save_status.text().startswith("File Saved (")
+    assert window.label_stim_save_status.text().endswith(")")
+
+    window.close()
+    window.deleteLater()
+
+
+def test_stim_region_change_status_updates_after_first_save_or_load(
+    qtbot, synthetic_seis, tmp_path
+):
+    data, header = synthetic_seis
+    events_path = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "start_sample": [10, 30],
+            "end_sample": [20, 40],
+        }
+    ).to_csv(events_path, index=False)
+
+    window = stim_artefact_viewer(
+        data,
+        fs=1000,
+        channels={**header, "ids": np.arange(len(header.get("receiver_line", [])))},
+        events_path=events_path,
+        title="test_stim_region_change_status_updates_after_first_save_or_load",
+    )
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(50)
+
+    assert window.regions_changed_since_last_save == 0
+    assert not window.label_stim_region_change_status.isVisible()
+
+    window._on_add_event_clicked()
+    assert window.regions_changed_since_last_save == 1
+    assert window.label_stim_region_change_status.isVisible()
+    assert window.label_stim_region_change_status.text() == "Events since saved: 1"
+
+    window._on_save_clicked()
+    assert window.regions_changed_since_last_save == 0
+    assert window.label_stim_region_change_status.isVisible()
+    assert window.label_stim_region_change_status.text() == "Events since saved: 0"
+
+    window._on_add_event_clicked()
+    assert window.regions_changed_since_last_save == 1
+    assert window.label_stim_region_change_status.text() == "Events since saved: 1"
+
+    window._on_del_event_clicked()
+    assert window.regions_changed_since_last_save == 0
+    assert window.label_stim_region_change_status.text() == "Events since saved: 0"
+
+    window._on_load_clicked()
+    assert window.regions_changed_since_last_save == 0
+    assert window.label_stim_region_change_status.text() == "Events since saved: 0"
+
+    window.close()
+    window.deleteLater()
 
 
 def test_jump_to_time_clamps_out_of_range(jump_window, qtbot):

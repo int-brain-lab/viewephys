@@ -1,9 +1,16 @@
 from contextlib import suppress
 from pathlib import Path
 
+from qtpy import QtCore
+
 from viewephys.data_model import SpikeInterfaceDataModel
 from viewephys.gui import A_SCALAR, T_SCALAR, EphysBinViewer, viewephys
 from viewephys.stim_artefact_viewer import stim_artefact_viewer
+
+# Pre-expected recording names in ``recordings_dict``: "raw" is shown in the
+# stim viewer, and "stim_artefact_removed" is overlaid on top of it in yellow.
+RAW_KEY = "raw"
+STIM_REMOVED_KEY = "stim_artefact_removed"
 
 
 class StimArtefactBinViewer(EphysBinViewer):
@@ -19,10 +26,27 @@ class StimArtefactBinViewer(EphysBinViewer):
         # FIX NAMING
         self.csv_path = Path(filepath)
 
+        # The dict must at least carry the raw band and the stim-removed band.
+        missing = {RAW_KEY, STIM_REMOVED_KEY} - set(recordings_dict)
+        if missing:
+            raise ValueError(
+                "recordings_dict must contain the keys "
+                f"{RAW_KEY!r} and {STIM_REMOVED_KEY!r}; missing: {sorted(missing)}"
+            )
+
         super().__init__(recordings_dict, *args, **kwargs)
 
-        # TODO: add a check, the dict keys must be "raw" and "stim_artefact_removed"
-        # at least
+        # The .ui defines a fixed window height, but the recording-step
+        # checkboxes are added dynamically (one per recording) for
+        # spikeinterface, so the group box height varies. Snap only the height
+        # to the minimum the content needs (keeping the predefined width).
+        # Deferred so it runs after the layout has been activated; an immediate
+        # call would use the pre-layout geometry and leave slack.
+        QtCore.QTimer.singleShot(0, self._snap_height_to_content)
+
+    def _snap_height_to_content(self) -> None:
+        self.layout().activate()
+        self.resize(self.width(), self.minimumSizeHint().height())
 
     def on_stim_viewer_jump_requested(self, t: float) -> None:
         # ``t`` is the region centre; the jump time is the window first sample,
@@ -61,7 +85,10 @@ class StimArtefactBinViewer(EphysBinViewer):
 
         first = int(self._first_sample)
         last = first + int(self.window_length_n)
-        t0 = first / self.data.get_sampling_frequency()
+        t0 = float(self.data.get_times()[first])
+        # Timestamp of sample 0: the events file stores absolute sample indices,
+        # which must be offset by this when converted to seconds.
+        first_time = float(self.data.get_times()[0])
 
         # Old data flow preserved: fetch raw once, branch per preprocessing step.
         # A fully general interface would re-fetch inside each get_data() call
@@ -79,6 +106,11 @@ class StimArtefactBinViewer(EphysBinViewer):
             data = self.data.get_data(first, last, k, raw=raw)
 
             if k == "raw":
+                # Source the overlay from the pre-expected stim-removed band in
+                # the recordings dict, over the same window as the raw data.
+                data_stim_removed = self.data.get_data(
+                    first, last, STIM_REMOVED_KEY, raw=raw
+                )
                 viewer = stim_artefact_viewer(
                     data,
                     self.data.get_sampling_frequency(),
@@ -86,8 +118,10 @@ class StimArtefactBinViewer(EphysBinViewer):
                     events_path=self.csv_path,
                     title=k,
                     t0=t0 * T_SCALAR,
+                    first_time=first_time,
                     t_scalar=T_SCALAR,
                     a_scalar=A_SCALAR,
+                    data_stim_removed=data_stim_removed,
                 )
                 with suppress(TypeError):
                     viewer.request_jump_to_time.disconnect(
