@@ -78,7 +78,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.lineEdit_jumpTime.setValidator(validator)
         self.lineEdit_jumpTime.returnPressed.connect(self.on_jumpToTimeRequested)
         # Window size: 0–3600 s (1-hour cap), 2 dp to match the display format
-        validator_window = QtGui.QDoubleValidator(0.0, 3600.0, 2, self.lineEdit_windowSize)
+        validator_window = QtGui.QDoubleValidator(
+            0.0, 3600.0, 2, self.lineEdit_windowSize
+        )
         validator_window.setNotation(QtGui.QDoubleValidator.StandardNotation)
         validator_window.setLocale(QtCore.QLocale.c())
         self.lineEdit_windowSize.setValidator(validator_window)
@@ -200,7 +202,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         )
 
     def update_slider_limits(self) -> None:
-        """Recompute the slider maximum and the tmax label from the current window length."""
+        """Recompute the slider maximum and tmax label from window_length_n."""
         if not hasattr(self, "data"):
             return
         num_samples = self.data.get_num_samples()
