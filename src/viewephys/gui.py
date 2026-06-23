@@ -77,7 +77,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         validator.setLocale(QtCore.QLocale.c())
         self.lineEdit_jumpTime.setValidator(validator)
         self.lineEdit_jumpTime.returnPressed.connect(self.on_jumpToTimeRequested)
-        self.lineEdit_windowSize.setValidator(validator)
+        # Window size: 0–3600 s (1-hour cap), 2 dp to match the display format
+        validator_window = QtGui.QDoubleValidator(0.0, 3600.0, 2, self.lineEdit_windowSize)
+        validator_window.setNotation(QtGui.QDoubleValidator.StandardNotation)
+        validator_window.setLocale(QtCore.QLocale.c())
+        self.lineEdit_windowSize.setValidator(validator_window)
         self.lineEdit_windowSize.returnPressed.connect(
             self.on_lineEdit_windowSizeChanged
         )
@@ -170,6 +174,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self._update_time_label()
 
     def on_lineEdit_windowSizeChanged(self) -> None:
+        """Resize the display window from the seconds value typed in the line edit."""
         text = self.lineEdit_windowSize.text().strip()
         if text == "" or not hasattr(self, "data"):
             return
@@ -187,23 +192,22 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.on_horizontalSliderReleased()
 
     def update_window_lineedit(self) -> None:
+        """Refresh the window-size line edit to reflect the current window_length_n."""
+        if not hasattr(self, "data"):
+            return
         self.lineEdit_windowSize.setText(
             f"{self.window_length_n / self.data.get_sampling_frequency():0.2f}"
         )
-        # enable and set slider, based on the number of samples in the entire file
 
     def update_slider_limits(self) -> None:
+        """Recompute the slider maximum and the tmax label from the current window length."""
+        if not hasattr(self, "data"):
+            return
         num_samples = self.data.get_num_samples()
         sampling_frequency = self.data.get_sampling_frequency()
-
-        self.horizontalSlider.setMaximum(
-            int(np.floor(num_samples / self.window_length_n))
-        )
-        tmax = (
-            np.floor(num_samples / self.window_length_n)
-            * self.window_length_n
-            / sampling_frequency
-        )
+        n_chunks = int(np.floor(num_samples / self.window_length_n))
+        self.horizontalSlider.setMaximum(n_chunks)
+        tmax = n_chunks * self.window_length_n / sampling_frequency
         self.label_smax.setText(f"{tmax:0.2f}s")
 
     def _update_time_label(self) -> None:

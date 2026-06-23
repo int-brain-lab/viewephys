@@ -211,6 +211,7 @@ class EasyQC(QtWidgets.QMainWindow):
         )
 
     def on_action_auto_downsample(self, checked: bool) -> None:
+        """Toggle anti-aliasing downsampling on the seismic image item."""
         self._auto_downsample = checked
         if self._display_mode == DISPLAY_MODE_DENSITY:
             self.ctrl.redraw()
@@ -750,8 +751,6 @@ class ControllerImage(Controller):
         self.set_gain()
 
     def set_gain(self, gain=None):
-        #  self.view.imageItem_seismic.setAutoLevels(True)
-        # self.view.imageItem_seismic.setAutoDownsample(False)
         if gain is None:
             gain = self.gain
         levels = 10 ** (gain / 20) * 4 * np.array([-1, 1])
