@@ -177,12 +177,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
     def on_lineEdit_windowSizeChanged(self) -> None:
         """Resize the display window from the seconds value typed in the line edit."""
-        text = self.lineEdit_windowSize.text().strip()
-        if text == "" or not hasattr(self, "data"):
-            return
-        try:
-            t = float(text)
-        except ValueError:
+        t = self._get_float_from_lineedit(self.lineEdit_windowSize)
+
+        if t is None:
             return
 
         self.window_length_n = max(
@@ -219,18 +216,26 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         tcur = self._first_sample / self.data.get_sampling_frequency()
         self.lineEdit_jumpTime.setText(f"{tcur:0.6f}")
 
+    def _get_float_from_lineedit(self, lineedit: QtWidgets.QLineEdit):
+        text = lineedit.text().strip()
+        if text == "" or not hasattr(self, "data"):
+            return
+        try:
+            t = float(text)
+            return t
+        except ValueError:
+            return
+
     def on_jumpToTimeRequested(self) -> None:
         """Jump to the user-typed time, centering the loaded window on it.
 
         The slider thumb is moved to the nearest chunk for visual feedback only.
         """
-        text = self.lineEdit_jumpTime.text().strip()
-        if text == "" or not hasattr(self, "data"):
+        t = self._get_float_from_lineedit(self.lineEdit_jumpTime)
+
+        if t is None:
             return
-        try:
-            t = float(text)
-        except ValueError:
-            return
+
         sampling_frequency = self.data.get_sampling_frequency()
         num_samples = self.data.get_num_samples()
 
