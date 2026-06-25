@@ -450,9 +450,7 @@ class EasyQC(QtWidgets.QMainWindow):
             self.imageItem_seismic.clear()
             self.imageItem_seismic.setVisible(False)
             self.plotDataItem_wiggle.setVisible(True)
-            self.plotItem_seismic.getPlotItem().getViewBox().setBackgroundColor(
-                "#193600"
-            )
+            self.plotItem_seismic.setBackground("#193600")
         self.ctrl.set_model(reset_viewbox=False)
 
     def gain_line_edit(self, mode: str | None = None):
@@ -730,6 +728,8 @@ class ControllerWiggle(Controller):
         (see _update_plotItem).
         """
         _max = np.max(np.max(self.model.data, axis=0) - np.min(self.model.data, axis=0))
+        if _max <= 0:
+            return 0.0
         return 20 * np.log10(_max)
 
     def set_gain(self, gain=None):
