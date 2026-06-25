@@ -33,12 +33,6 @@ class Model:
     x0: float = 0
     taxis: int = 0
 
-    def auto_gain(self) -> float:
-        rmsnan = np.nansum(self.data**2, axis=self.taxis) / np.sum(
-            ~np.isnan(self.data), axis=self.taxis
-        )
-        return 20 * np.log10(np.median(np.sqrt(rmsnan)))
-
     def get_trace_spectrogram(self, c, trange=None):
         from scipy.signal import spectrogram
 
@@ -147,6 +141,7 @@ class EasyQC(QtWidgets.QMainWindow):
         self.layers = {}
         self.model = Model(None, None)
         self._display_mode = DISPLAY_MODE_DENSITY
+        self._auto_downsample = self.actionAutoDownsample.isChecked()
         self._ctrl_image = ControllerImage(self)
         self._ctrl_wiggle = ControllerWiggle(self)
         icon_path = Path(__file__).resolve().parent.parent.joinpath("viewephys.svg")
@@ -157,10 +152,11 @@ class EasyQC(QtWidgets.QMainWindow):
         self.plotItem_seismic.setBackground(background_color)
         self.plotItem_seismic.addItem(self.imageItem_seismic)
         self.plotDataItem_wiggle = pg.PlotDataItem(visible=False)
-        self.plotDataItem_wiggle.setPen(pg.mkPen("#ebc000"))
+        self.plotDataItem_wiggle.setPen(pg.mkPen("#ebc000", width=0.9))
         self.plotItem_seismic.addItem(self.plotDataItem_wiggle)
         self.viewBox_seismic = self.plotItem_seismic.getPlotItem().getViewBox()
         self._init_menu()
+        self.setColorMap("CET-D1")
         self._init_cmenu()
         self.plotDataItem_header_h = pg.PlotDataItem()
         self.plotItem_header_h.addItem(self.plotDataItem_header_h)
@@ -197,7 +193,8 @@ class EasyQC(QtWidgets.QMainWindow):
             scene.sigMouseMoved, rateLimit=60, slot=self.mouseMoveEvent
         )
         scene.sigMouseClicked.connect(self.mouseClick)
-        self.lineEdit_gain.returnPressed.connect(self.editGain)
+        self.lineEdit_gain_density.returnPressed.connect(self.editGain)
+        self.lineEdit_gain_wiggle.returnPressed.connect(self.editGain)
         self.lineEdit_sort.returnPressed.connect(self.editSort)
         self.comboBox_header.currentTextChanged.connect(self.ctrl.set_header)
         self.viewBox_seismic.sigRangeChanged.connect(self.on_sigRangeChanged)
@@ -211,7 +208,14 @@ class EasyQC(QtWidgets.QMainWindow):
             lambda checked: checked and self.set_display_mode(DISPLAY_MODE_WIGGLE)
         )
 
+    def on_action_auto_downsample(self, checked: bool) -> None:
+        """Toggle anti-aliasing downsampling on the seismic image item."""
+        self._auto_downsample = checked
+        if self._display_mode == DISPLAY_MODE_DENSITY:
+            self.ctrl.redraw()
+
     def _init_menu(self):
+        self.actionAutoDownsample.toggled.connect(self.on_action_auto_downsample)
         self.actionColormap_CET_D6.triggered.connect(lambda: self.setColorMap("CET-D6"))
         self.actionColormap_CET_D1.triggered.connect(lambda: self.setColorMap("CET-D1"))
         self.actionColormap_CET_L2.triggered.connect(lambda: self.setColorMap("CET-L2"))
@@ -420,21 +424,41 @@ class EasyQC(QtWidgets.QMainWindow):
             cmap = pg.colormap.getFromMatplotlib(cmap)
         self.imageItem_seismic.setColorMap(cmap)
 
+        action_map = {
+            "CET-D1": self.actionColormap_CET_D1,
+            "CET-D6": self.actionColormap_CET_D6,
+            "CET-L2": self.actionColormap_CET_L2,
+            "PuOr": self.actionColormap_MPL_PuOr,
+        }
+        cmap_name = cmap if isinstance(cmap, str) else getattr(cmap, "name", str(cmap))
+        for name, action in action_map.items():
+            action.setChecked(name == cmap_name)
+
     def set_display_mode(self, mode: str) -> None:
         if mode == self._display_mode:
             return
         self._display_mode = mode
         if mode == DISPLAY_MODE_DENSITY:
+            self.stackedWidget_gain.setCurrentWidget(self.page_gain_density)
             self.imageItem_seismic.setVisible(True)
             self.plotDataItem_wiggle.setVisible(False)
             self.plotDataItem_wiggle.clear()
-            self.plotItem_seismic.setBackground("#000000")
+            self.plotItem_seismic.setBackground(
+                self.palette().color(self.backgroundRole())
+            )
         elif mode == DISPLAY_MODE_WIGGLE:
+            self.stackedWidget_gain.setCurrentWidget(self.page_gain_wiggle)
             self.imageItem_seismic.clear()
             self.imageItem_seismic.setVisible(False)
             self.plotDataItem_wiggle.setVisible(True)
             self.plotItem_seismic.setBackground("#193600")
         self.ctrl.set_model(reset_viewbox=False)
+
+    def gain_line_edit(self, mode: str | None = None):
+        mode = self._display_mode if mode is None else mode
+        if mode == DISPLAY_MODE_WIGGLE:
+            return self.lineEdit_gain_wiggle
+        return self.lineEdit_gain_density
 
 
 class Controller(abc.ABC):
@@ -444,6 +468,11 @@ class Controller(abc.ABC):
         self.transform = np.eye(3)
         self.trace_indices = None
         self.hkey = None
+
+    @property
+    @abc.abstractmethod
+    def gain_line_edit(self):
+        pass
 
     @abc.abstractmethod
     def set_gain(self, gain=None):
@@ -550,7 +579,7 @@ class Controller(abc.ABC):
         for i, eqc in enumerate(eqcs):
             if eqc is self.view:
                 continue
-            eqc.setColorMap(self.view.imageItem_seismic.getColorMap() or "CET-L2")
+            eqc.setColorMap(self.view.imageItem_seismic.getColorMap() or "CET-D1")
             eqc.setGeometry(self.view.geometry())
             eqc.ctrl.set_gain(self.gain)
             eqc.plotItem_seismic.setXLink(self.view.plotItem_seismic)
@@ -562,11 +591,17 @@ class Controller(abc.ABC):
                 rect.translate(rect.width(), 0)
                 eqc.setGeometry(rect)
 
+    def auto_gain(self):
+        rmsnan = np.nansum(self.model.data**2, axis=self.model.taxis) / np.sum(
+            ~np.isnan(self.model.data), axis=self.model.taxis
+        )
+        return 20 * np.log10(np.median(np.sqrt(rmsnan)))
+
     @property
     def gain(self):
-        str_gain = self.view.lineEdit_gain.text()
+        str_gain = self.gain_line_edit.text()
         if str_gain.strip() == "":
-            return self.model.auto_gain()
+            return self.auto_gain()
         return float(str_gain)
 
     def set_header(self):
@@ -658,6 +693,10 @@ class Controller(abc.ABC):
 
 
 class ControllerWiggle(Controller):
+    @property
+    def gain_line_edit(self):
+        return self.view.gain_line_edit(DISPLAY_MODE_WIGGLE)
+
     def _update_plotItem(self, tlim=None, clim=None):
         if self.model.taxis == 0:
             xlim, ylim = (tlim, clim)
@@ -666,6 +705,7 @@ class ControllerWiggle(Controller):
                 wiggle_y / (10 ** (self.gain / 20))
                 + np.arange(self.model.ntr)[np.newaxis, :]
             )
+
             self.view.plotDataItem_wiggle.setData(
                 x=np.tile(np.r_[self.tscale, np.nan], self.model.ntr),
                 y=wiggle_y.T.flatten(),
@@ -684,10 +724,22 @@ class ControllerWiggle(Controller):
             self.view.viewBox_seismic.setXRange(*xlim, padding=0)
             self.view.viewBox_seismic.setYRange(*ylim, padding=0)
 
+    def auto_gain(self):
+        """Set the gain for the wiggle plot.
+
+        Here the gain is computed such that the max peak-to-peak height
+        of a channel's data is 1, which is the spacing between channel lines
+        (see _update_plotItem).
+        """
+        _max = np.max(np.max(self.model.data, axis=0) - np.min(self.model.data, axis=0))
+        if _max <= 0:
+            return 0.0
+        return 20 * np.log10(_max)
+
     def set_gain(self, gain=None):
         if gain is None:
             gain = self.gain
-        self.view.lineEdit_gain.setText(f"{gain:.1f}")
+        self.gain_line_edit.setText(f"{gain:.1f}")
         self._update_plotItem()
 
     def get_max_time(self):
@@ -695,16 +747,26 @@ class ControllerWiggle(Controller):
 
 
 class ControllerImage(Controller):
+    @property
+    def gain_line_edit(self):
+        return self.view.gain_line_edit(DISPLAY_MODE_DENSITY)
+
     def _update_plotItem(self, tlim, clim):
         x0, t0, si = self.model.x0, self.model.t0, self.model.si
         if self.model.taxis == 0:
             xlim, ylim = (tlim, clim)
             transform = [si, 0.0, 0.0, 0.0, 1, 0.0, t0 - si / 2, x0 - 0.5, 1.0]
-            self.view.imageItem_seismic.setImage(self.model.data[:, self.trace_indices])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[:, self.trace_indices],
+                autoDownsample=self.view._auto_downsample,
+            )
         elif self.model.taxis == 1:
             xlim, ylim = (clim, tlim)
             transform = [1.0, 0.0, 0.0, 0.0, si, 0.0, x0 - 0.5, t0 - si / 2, 1.0]
-            self.view.imageItem_seismic.setImage(self.model.data[self.trace_indices, :])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[self.trace_indices, :],
+                autoDownsample=self.view._auto_downsample,
+            )
             self.view.plotItem_seismic.invertY()
         else:
             raise ValueError("taxis must be 0 (horizontal axis) or 1 (vertical axis)")
@@ -722,9 +784,15 @@ class ControllerImage(Controller):
 
     def redraw(self):
         if self.model.taxis == 1:
-            self.view.imageItem_seismic.setImage(self.model.data[self.trace_indices, :])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[self.trace_indices, :],
+                autoDownsample=self.view._auto_downsample,
+            )
         elif self.model.taxis == 0:
-            self.view.imageItem_seismic.setImage(self.model.data[:, self.trace_indices])
+            self.view.imageItem_seismic.setImage(
+                self.model.data[:, self.trace_indices],
+                autoDownsample=self.view._auto_downsample,
+            )
         self.set_header()
         self.set_gain()
 
@@ -732,8 +800,8 @@ class ControllerImage(Controller):
         if gain is None:
             gain = self.gain
         levels = 10 ** (gain / 20) * 4 * np.array([-1, 1])
-        self.view.imageItem_seismic.setLevels(levels)
-        self.view.lineEdit_gain.setText(f"{gain:.1f}")
+        self.view.imageItem_seismic.setLevels(levels, update=True)
+        self.gain_line_edit.setText(f"{gain:.3f}")
 
 
 def viewseis(w=None, si=0.002, h=None, title=None, t0=0, x0=0, taxis=1):

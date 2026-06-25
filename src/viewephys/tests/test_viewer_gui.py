@@ -3,7 +3,7 @@ import pytest
 from qtpy import QtCore, QtWidgets
 
 from viewephys.data_model import SpikeGLXDataModel
-from viewephys.gui import NSAMP_CHUNK, EphysBinViewer, create_app, viewephys
+from viewephys.gui import A_SCALAR, EphysBinViewer, create_app, viewephys
 from viewephys.tests.test_viewer_helpers import synthetic_seismic_data
 from viewephys.viewer.gui import EasyQC, viewseis
 
@@ -50,11 +50,40 @@ def test_window_builds(easyqc_window):
 
 def test_gain_edit_updates(view_with_data, qtbot):
     window = view_with_data
-    window.lineEdit_gain.setText("6")
-    qtbot.keyPress(window.lineEdit_gain, QtCore.Qt.Key_Return)
+
+    # Set the density gain and confirm the image controller reads it back.
+    window.lineEdit_gain_density.setText("6")
+    qtbot.keyPress(window.lineEdit_gain_density, QtCore.Qt.Key_Return)
+    assert window.ctrl is window._ctrl_image
+    assert window.ctrl.gain == pytest.approx(6.0)
+    assert window._ctrl_image.gain == pytest.approx(6.0)
+
+    # Switch to wiggle mode, set its gain, and verify the two controllers diverge.
     qtbot.mouseClick(window.radio_wiggle, QtCore.Qt.LeftButton)
-    qtbot.keyPress(window.lineEdit_gain, QtCore.Qt.Key_Return)
-    assert float(window.lineEdit_gain.text()) == 6.0
+    window.lineEdit_gain_wiggle.setText("12")
+    qtbot.keyPress(window.lineEdit_gain_wiggle, QtCore.Qt.Key_Return)
+    assert window.ctrl is window._ctrl_wiggle
+    assert window.ctrl.gain == pytest.approx(12.0)
+    assert window._ctrl_wiggle.gain == pytest.approx(12.0)
+    assert window._ctrl_image.gain == pytest.approx(6.0)
+
+    # Keep the widget text checks explicit because the UI swaps fields per mode.
+    assert float(window.lineEdit_gain_density.text()) == 6.0
+    assert float(window.lineEdit_gain_wiggle.text()) == 12.0
+
+    # Switch back to density and confirm its controller and field kept the old value.
+    qtbot.mouseClick(window.radio_density, QtCore.Qt.LeftButton)
+    assert window.stackedWidget_gain.currentWidget() is window.page_gain_density
+    assert window.ctrl is window._ctrl_image
+    assert window.ctrl.gain == pytest.approx(6.0)
+    assert float(window.lineEdit_gain_density.text()) == 6.0
+
+    # Return to wiggle and confirm its independent gain is still intact.
+    qtbot.mouseClick(window.radio_wiggle, QtCore.Qt.LeftButton)
+    assert window.stackedWidget_gain.currentWidget() is window.page_gain_wiggle
+    assert window.ctrl is window._ctrl_wiggle
+    assert window.ctrl.gain == pytest.approx(12.0)
+    assert float(window.lineEdit_gain_wiggle.text()) == 12.0
 
 
 def test_toggle_density_wiggle(view_with_data, qtbot):
@@ -126,6 +155,18 @@ class _FakeArraySR(_FakeSR):
         return np.zeros(shape, dtype=np.float32)
 
 
+class _RandomFakeArraySR(_FakeArraySR):
+    """A small test file used to check the data displyaed is as expected."""
+
+    ns = int(
+        _FakeArraySR.fs * 5
+    )  # because we create the full array, make short recording
+    data = np.random.random((ns, _FakeArraySR.nc))
+
+    def __getitem__(self, key):
+        return self.data[key]
+
+
 class _FakeViewBox:
     """Minimal view box that records range changes made by the jump code."""
 
@@ -168,12 +209,12 @@ class _FakeViewer:
         return None
 
 
-def _centered_first_sample(typed_seconds, fs, ns):
+def _centered_first_sample(typed_seconds, fs, ns, window_length_n):
     """Return the expected first sample after centering a jump request."""
     requested_sample = int(round(typed_seconds * fs))
     requested_sample = max(0, min(requested_sample, int(ns) - 1))
-    max_first = max(0, int(ns) - NSAMP_CHUNK)
-    first_sample = requested_sample - NSAMP_CHUNK // 2
+    max_first = max(0, int(ns) - window_length_n)
+    first_sample = requested_sample - window_length_n // 2
     return max(0, min(first_sample, max_first))
 
 
@@ -182,7 +223,7 @@ def jump_window(qtbot, monkeypatch):
     window = EphysBinViewer()
     qtbot.addWidget(window)
     window.data = SpikeGLXDataModel(_FakeSR())
-    slider_max = int(np.floor(window.data.get_num_samples() / NSAMP_CHUNK))
+    slider_max = int(np.floor(window.data.get_num_samples() / window.window_length_n))
     window.horizontalSlider.setMaximum(slider_max)
     window.horizontalSlider.setEnabled(True)
     window.lineEdit_jumpTime.setEnabled(True)
@@ -207,12 +248,13 @@ def test_jump_to_time_loads_exact_sample(jump_window, qtbot, typed_seconds):
     window = jump_window
     fs = window.data.get_sampling_frequency()
     expected_first = _centered_first_sample(
-        typed_seconds, fs, window.data.get_num_samples()
+        typed_seconds, fs, window.data.get_num_samples(), window.window_length_n
     )
     expected_slider = max(
         0,
         min(
-            int(round(expected_first / NSAMP_CHUNK)), window.horizontalSlider.maximum()
+            int(round(expected_first / window.window_length_n)),
+            window.horizontalSlider.maximum(),
         ),
     )
     expected_t = expected_first / fs
@@ -232,7 +274,7 @@ def test_jump_to_time_non_chunk_aligned(jump_window, qtbot):
     window.on_jumpToTimeRequested()
 
     requested_sample = int(round(500.150 * window.data.get_sampling_frequency()))
-    assert window._first_sample + NSAMP_CHUNK // 2 == requested_sample
+    assert window._first_sample + window.window_length_n // 2 == requested_sample
     assert window._first_sample == 14_999_500
     assert window.horizontalSlider.value() == 1500
     assert window.lineEdit_jumpTime.text() == "499.983333"
@@ -248,17 +290,22 @@ def test_slider_drag_resets_first_sample_to_chunk(jump_window, qtbot):
     assert window._first_sample == 14_999_500  # not chunk-aligned
 
     window.horizontalSlider.setValue(1501)
-    assert window._first_sample == 1501 * NSAMP_CHUNK
+    assert window._first_sample == 1501 * window.window_length_n
     assert window.lineEdit_jumpTime.text() == (
-        f"{1501 * NSAMP_CHUNK / window.data.get_sampling_frequency():0.6f}"
+        f"{1501 * window.window_length_n / window.data.get_sampling_frequency():0.6f}"
     )
 
 
 def test_jump_to_time_clamps_out_of_range(jump_window, qtbot):
     window = jump_window
-    max_first = max(0, int(window.data.get_num_samples()) - NSAMP_CHUNK)
+    max_first = max(0, int(window.data.get_num_samples()) - window.window_length_n)
+
     expected_slider_high = max(
-        0, min(int(round(max_first / NSAMP_CHUNK)), window.horizontalSlider.maximum())
+        0,
+        min(
+            int(round(max_first / window.window_length_n)),
+            window.horizontalSlider.maximum(),
+        ),
     )
 
     window.lineEdit_jumpTime.setText("-50")
@@ -290,7 +337,7 @@ def test_jump_to_time_recenters_existing_zoom(qtbot, monkeypatch):
     qtbot.addWidget(window)
     window.data = SpikeGLXDataModel(_FakeArraySR())
     window.horizontalSlider.setMaximum(
-        int(np.floor(window.data.get_num_samples() / NSAMP_CHUNK))
+        int(np.floor(window.data.get_num_samples() / window.window_length_n))
     )
     for checkbox in window.cbs.values():
         checkbox.setChecked(False)
@@ -344,3 +391,73 @@ def test_script_api_viewephys(qtbot, synthetic_seis):
     qtbot.addWidget(window)
     assert window is not None
     window.close()
+
+
+def test_window_size_change_displays_different_data(qtbot):
+    """Changing the window size must reload and display the matching chunk of
+    the underlying recording in the spawned 'raw' viewer."""
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+    window.data = SpikeGLXDataModel(_RandomFakeArraySR())
+    window.update_slider_limits()
+    for checkbox in window.cbs.values():
+        checkbox.setChecked(False)
+    window.cbs["raw"].setChecked(True)
+    window.on_horizontalSliderReleased()
+
+    # Display a 0.10 s window and check the raw viewer shows the matching chunk.
+    window.lineEdit_windowSize.setText("0.10")
+    window.on_lineEdit_windowSizeChanged()
+    n0 = window.window_length_n
+    expected0 = window.data.get_data(0, n0, "raw").T * A_SCALAR
+    np.testing.assert_array_equal(
+        window.viewers["raw"].imageItem_seismic.image, expected0
+    )
+
+    # A wider window must display a different, larger chunk of the recording.
+    window.lineEdit_windowSize.setText("0.20")
+    window.on_lineEdit_windowSizeChanged()
+    n1 = window.window_length_n
+    expected1 = window.data.get_data(0, n1, "raw").T * A_SCALAR
+    np.testing.assert_array_equal(
+        window.viewers["raw"].imageItem_seismic.image, expected1
+    )
+    assert window.viewers["raw"].imageItem_seismic.image.shape[0] == n1 != n0
+
+    # Move the slider to start one second (fs samples) into the recording and
+    # check the raw viewer now shows that later chunk.
+    fs = window.data.get_sampling_frequency()
+    slider_value = int(fs // n1)
+    window.horizontalSlider.setValue(slider_value)
+    window.on_horizontalSliderReleased()
+    first = int(fs)
+    assert window._first_sample == first
+    expected_moved = window.data.get_data(first, first + n1, "raw").T * A_SCALAR
+    np.testing.assert_array_equal(
+        window.viewers["raw"].imageItem_seismic.image, expected_moved
+    )
+
+    window.close()
+    window.deleteLater()
+
+
+def test_auto_downsample_true_by_default(view_with_data):
+    """Auto downsample is on by default, so the image item must downsample."""
+    window = view_with_data
+    assert window.actionAutoDownsample.isChecked() is True
+    assert window._auto_downsample is True
+    assert window.imageItem_seismic.autoDownsample is True
+
+
+def test_auto_downsample_toggles_view_item(view_with_data):
+    """Toggling the View menu item flips the image item's autoDownsample flag."""
+    window = view_with_data
+    assert window._display_mode == "density"
+
+    window.actionAutoDownsample.setChecked(False)
+    assert window._auto_downsample is False
+    assert window.imageItem_seismic.autoDownsample is False
+
+    window.actionAutoDownsample.setChecked(True)
+    assert window._auto_downsample is True
+    assert window.imageItem_seismic.autoDownsample is True
