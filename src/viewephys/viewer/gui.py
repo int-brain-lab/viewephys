@@ -199,6 +199,7 @@ class EasyQC(QtWidgets.QMainWindow):
         self.comboBox_header.currentTextChanged.connect(self.ctrl.set_header)
         self.viewBox_seismic.sigRangeChanged.connect(self.on_sigRangeChanged)
         self.horizontalScrollBar.valueChanged.connect(self.on_horizontalSliderChange)
+        self.verticalScrollBar.setInvertedAppearance(True)
         self.verticalScrollBar.valueChanged.connect(self.on_verticalSliderChange)
         self.radio_density.toggled.connect(
             lambda checked: checked and self.set_display_mode(DISPLAY_MODE_DENSITY)
@@ -563,10 +564,13 @@ class Controller(abc.ABC):
         return ix, iy
 
     def limits(self):
-        ixlim = [0, self.model.nx]
+        ixlim = [0, self.get_max_time()]
         iylim = [0, self.model.ny]
         x, y, _ = np.matmul(self.transform, np.c_[ixlim, iylim, [1, 1]].T)
         return x, y
+
+    def get_max_time(self):
+        return self.model.nx
 
     def propagate(self, explode=False):
         eqcs = self.view._instances()
@@ -737,6 +741,9 @@ class ControllerWiggle(Controller):
             gain = self.gain
         self.gain_line_edit.setText(f"{gain:.1f}")
         self._update_plotItem()
+
+    def get_max_time(self):
+        return self.model.nx * self.model.si
 
 
 class ControllerImage(Controller):
