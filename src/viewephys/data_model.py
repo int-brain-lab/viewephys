@@ -204,10 +204,6 @@ class SpikeInterfaceDataModel(AbstractDataModel):
             .T
         )
 
-    # -------------------------------------------------------------------------
-    # Implemented by GitHub Copilot (Claude Sonnet 4.6) — May 2026
-    # -------------------------------------------------------------------------
-
     def get_raw(self, start_sample: int, end_sample: int) -> None:
         """SpikeInterface recordings carry their own preprocessing chain"""
         return None

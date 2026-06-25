@@ -97,9 +97,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.data: SpikeGLXDataModel | SpikeInterfaceDataModel
 
         if bin_file is not None:
-            self.open_file(file=bin_file)  # set self.data
-            self._setup_viewers_and_checkboxes()
-            self._setup_slider()
+            self.open_file(file=bin_file)
 
     def open_file_live(self, *args, **kwargs) -> None:
         """
@@ -144,6 +142,12 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
         elif isinstance(file, dict):
             self.data = SpikeInterfaceDataModel(file)
+
+        else:
+            return
+
+        self._setup_viewers_and_checkboxes()
+        self._setup_slider()
 
     def _setup_slider(self):
         num_samples = self.data.get_num_samples()
@@ -222,9 +226,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         probe_info = self.data.get_probe_information()
         probe_label = f"{probe_info} \n" if probe_info else ""
 
-        saturation_acd = self.data.get_saturation_adc()
+        saturation_adc = self.data.get_saturation_adc()
         saturation_label = (
-            f"Saturation ADC at {saturation_acd} uV \n" if saturation_acd else ""
+            f"Saturation ADC at {saturation_adc} uV \n" if saturation_adc else ""
         )
 
         tlabel = (

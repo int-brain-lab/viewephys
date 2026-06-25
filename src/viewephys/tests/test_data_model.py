@@ -191,10 +191,11 @@ class TestSpikeInterfaceDataModel:
     ):
         """"""
         assert np.array_equal(
-            rec.get_traces(start_frame=0, end_frame=5).T, model.get_data(0, 5, "raw")
+            rec.get_traces(start_frame=0, end_frame=5, return_in_uV=True).T,
+            model.get_data(0, 5, "raw"),
         )
         assert np.array_equal(
-            filtered.get_traces(start_frame=0, end_frame=5).T,
+            filtered.get_traces(start_frame=0, end_frame=5, return_in_uV=True).T,
             model.get_data(0, 5, "filtered"),
         )
         assert model.get_raw(0, 5) is None
