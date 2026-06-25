@@ -50,11 +50,40 @@ def test_window_builds(easyqc_window):
 
 def test_gain_edit_updates(view_with_data, qtbot):
     window = view_with_data
-    window.lineEdit_gain.setText("6")
-    qtbot.keyPress(window.lineEdit_gain, QtCore.Qt.Key_Return)
+
+    # Set the density gain and confirm the image controller reads it back.
+    window.lineEdit_gain_density.setText("6")
+    qtbot.keyPress(window.lineEdit_gain_density, QtCore.Qt.Key_Return)
+    assert window.ctrl is window._ctrl_image
+    assert window.ctrl.gain == pytest.approx(6.0)
+    assert window._ctrl_image.gain == pytest.approx(6.0)
+
+    # Switch to wiggle mode, set its gain, and verify the two controllers diverge.
     qtbot.mouseClick(window.radio_wiggle, QtCore.Qt.LeftButton)
-    qtbot.keyPress(window.lineEdit_gain, QtCore.Qt.Key_Return)
-    assert float(window.lineEdit_gain.text()) == 6.0
+    window.lineEdit_gain_wiggle.setText("12")
+    qtbot.keyPress(window.lineEdit_gain_wiggle, QtCore.Qt.Key_Return)
+    assert window.ctrl is window._ctrl_wiggle
+    assert window.ctrl.gain == pytest.approx(12.0)
+    assert window._ctrl_wiggle.gain == pytest.approx(12.0)
+    assert window._ctrl_image.gain == pytest.approx(6.0)
+
+    # Keep the widget text checks explicit because the UI swaps fields per mode.
+    assert float(window.lineEdit_gain_density.text()) == 6.0
+    assert float(window.lineEdit_gain_wiggle.text()) == 12.0
+
+    # Switch back to density and confirm its controller and field kept the old value.
+    qtbot.mouseClick(window.radio_density, QtCore.Qt.LeftButton)
+    assert window.stackedWidget_gain.currentWidget() is window.page_gain_density
+    assert window.ctrl is window._ctrl_image
+    assert window.ctrl.gain == pytest.approx(6.0)
+    assert float(window.lineEdit_gain_density.text()) == 6.0
+
+    # Return to wiggle and confirm its independent gain is still intact.
+    qtbot.mouseClick(window.radio_wiggle, QtCore.Qt.LeftButton)
+    assert window.stackedWidget_gain.currentWidget() is window.page_gain_wiggle
+    assert window.ctrl is window._ctrl_wiggle
+    assert window.ctrl.gain == pytest.approx(12.0)
+    assert float(window.lineEdit_gain_wiggle.text()) == 12.0
 
 
 def test_toggle_density_wiggle(view_with_data, qtbot):
