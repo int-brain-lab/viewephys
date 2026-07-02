@@ -186,6 +186,50 @@ class TestSpikeInterfaceDataModel:
             rec, filtered, model, expected_duration=0.3
         )
 
+    def test_spikeinterface_with_probe_non_int_shank_ids(self):
+        """
+        Test spikeinterface model when the probe shank ids cannot be cast to
+        int (e.g. "s1", "s2"). In this case the "shank" key is omitted from
+        the header while all position-based entries are still present.
+        """
+        probe = pi.Probe(ndim=2)
+        shanks = np.array(["s0", "s1", "s0", "s1", "s0"])
+        channel_locs = np.array(
+            [[0.0, 10.0], [1.0, 11.0], [0.0, 20.0], [1.0, 22.0], [0.1, 22.0]],
+        )
+
+        probe.set_contacts(positions=channel_locs, shank_ids=shanks)
+        probe.set_device_channel_indices(np.arange(5))
+        rec = si_core.generate_recording(
+            num_channels=5,
+            sampling_frequency=55000.0,
+            durations=[0.3],
+            set_probe=False,
+            seed=0,
+        )
+        rec = rec.set_probe(probe, group_mode="by_probe")
+
+        filtered = si_prepro.bandpass_filter(rec, freq_min=300, freq_max=6000)
+
+        model = SpikeInterfaceDataModel({"raw": rec, "filtered": filtered})
+        header = model.get_header()
+
+        assert "shank" not in header
+        np_assert_equal(
+            header,
+            {
+                "trace": np.arange(rec.get_num_channels()),
+                "x": channel_locs[:, 0],
+                "y": channel_locs[:, 1],
+                "col": [0, 0, 0, 0, 1],
+                "row": [0, 1, 2, 3, 3],
+                "ind": np.arange(5),
+            },
+        )
+        self.assert_all_spikeinterface_methods(
+            rec, filtered, model, expected_duration=0.3
+        )
+
     def assert_all_spikeinterface_methods(
         self, rec, filtered, model, expected_duration
     ):

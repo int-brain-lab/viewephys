@@ -378,8 +378,13 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 a_scalar=A_SCALAR,
             )
             if isinstance(self.data, SpikeInterfaceDataModel):
-                # reorder the spikeinterface channel ordering to match SpikeGLXReader
-                viewer.ctrl.sort(["!x", "y", "shank"])
+                # reorder the spikeinterface channel ordering to match SpikeGLXReader.
+                # "shank" is only present when shank ids can be cast to int, so fall
+                # back to sorting by position alone when it is absent.
+                sort_keys = ["!x", "y"]
+                if "shank" in viewer.model.header:
+                    sort_keys.append("shank")
+                viewer.ctrl.sort(sort_keys)
 
             self.viewers[k] = viewer
 

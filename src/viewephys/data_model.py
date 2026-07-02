@@ -210,6 +210,14 @@ class SpikeInterfaceDataModel(AbstractDataModel):
 
     @override
     def get_header(self) -> dict:
+        """Fill the header information from the SpikeInterface probe.
+
+        Note that `shank_ids` is an array of strings. When empty,
+        it is `None` or an array of empty strings, depending on the
+        probeinterface version. If the shank ids are filled in, they
+        can be converted to int (e.g. `1`, `2`, ...) or might not be
+        (e.g. `s1`, `s2`, ...) depending on the probe.
+        """
         num_channels = self.first_recording.get_num_channels()
 
         # Handle the case where no channel locations can be found
@@ -248,14 +256,23 @@ class SpikeInterfaceDataModel(AbstractDataModel):
             mask = probe.shank_ids == shank_id
             _, col[mask] = np.unique(positions[mask, 0], return_inverse=True)
 
-        geom = {
-            "trace": np.arange(num_channels),
-            "shank": probe.shank_ids.astype(int),
-            "x": positions[:, 0],
-            "y": positions[:, 1],
-            "col": col,
-            "row": row.astype(int),
-        }
+        # We want the geom dict in the same order as SpikeGLXDataModel.
+        # First, add the traces
+        geom = {"trace": np.arange(num_channels)}
+
+        # Then if we can convert the shank ids from str to int, add these
+        if self._can_convert_shank_ids_to_int(probe.shank_ids):
+            geom.update({"shank": probe.shank_ids.astype(int)})
+
+        # Finally add all other options in the same order as SpikeGLXDataModel
+        geom.update(
+            {
+                "x": positions[:, 0],
+                "y": positions[:, 1],
+                "col": col,
+                "row": row.astype(int),
+            }
+        )
 
         if (
             sample_shift := self.first_recording.get_property("inter_sample_shift")
@@ -269,6 +286,13 @@ class SpikeInterfaceDataModel(AbstractDataModel):
             geom["ind"] = probe.device_channel_indices.astype(int)
 
         return geom
+
+    def _can_convert_shank_ids_to_int(self, shank_ids):
+        try:
+            shank_ids.astype(int)
+            return True
+        except ValueError:
+            return False
 
     @override
     def get_num_samples(self) -> int:
