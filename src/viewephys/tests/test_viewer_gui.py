@@ -472,7 +472,7 @@ def test_lfpack_single_recording_opens(qtbot, monkeypatch, tmp_path):
     window = _open_lfpack_window(qtbot, monkeypatch, h5)
 
     assert isinstance(window.data, LFPackDataModel)
-    assert list(window.cbs) == ["raw"]
+    assert list(window.cbs) == ["raw", "csd"]
     # No recording selector for single-recording files.
     assert not (
         hasattr(window, "groupBox_recording") and window.groupBox_recording.isVisible()

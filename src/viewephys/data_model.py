@@ -193,16 +193,36 @@ class LFPackDataModel(SpikeGLXDataModel):
     """Data model for lfpack HDF5-packed LFP files.
 
     Wraps an ``lfpack.LFPackReader`` (a drop-in ``spikeglx.Reader``).  The data
-    stored in the archive is already decompressed and denoised, so there is a
-    single ``"raw"`` step and no preprocessing branches.  Most methods are
-    inherited from :class:`SpikeGLXDataModel`; only the handful that rely on
-    SpikeGLX metadata absent from compressed files are overridden.
+    is already decompressed and denoised, so the steps are the ``"raw"`` signal
+    and its current-source density (``"csd"``).  Most methods are inherited from
+    :class:`SpikeGLXDataModel`; only those relying on SpikeGLX metadata absent
+    from compressed files, or specific to lfpack, are overridden.
     """
 
     @override
     def get_steps(self) -> list[str]:
-        """Single denoised signal — no preprocessing options."""
-        return ["raw"]
+        """Denoised signal and its current-source density."""
+        return ["raw", "csd"]
+
+    @override
+    def get_data(
+        self,
+        start_sample: int,
+        end_sample: int,
+        step: str,
+        raw: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Return the raw signal or its current-source density.
+
+        The ``"csd"`` step computes the CSD via
+        :func:`ibldsp.voltage.current_source_density`; other steps defer to the
+        inherited (raw pass-through) implementation.
+        """
+        if step != "csd":
+            return super().get_data(start_sample, end_sample, step, raw=raw)
+        if raw is None:
+            raw = self.get_raw(start_sample, end_sample)
+        return voltage.current_source_density(raw, h=self.get_header())
 
     @override
     def get_probe_information(self) -> str:
@@ -228,11 +248,14 @@ class LFPackDataModel(SpikeGLXDataModel):
     def get_header(self) -> dict:
         """Probe geometry plus brain-region annotations when present.
 
-        Adds ``atlas_id`` (and ``acronym``) from the file's per-channel
-        annotations so the viewer can draw a brain-region strip.  ``acronym``
-        is returned as an ndarray so it indexes like the numeric header fields.
+        Adds ``col``/``row`` (derived from ``x``/``y``) so the CSD step has the
+        column/row layout it needs, and ``atlas_id``/``acronym`` from the file's
+        per-channel annotations so the viewer can draw a brain-region strip.
+        ``acronym`` is an ndarray so it indexes like the numeric header fields.
         """
         header = dict(self.sr.geometry)
+        _, header["col"] = np.unique(np.asarray(header["x"]), return_inverse=True)
+        _, header["row"] = np.unique(np.asarray(header["y"]), return_inverse=True)
         if "atlas_id" in self._channels:
             header["atlas_id"] = np.asarray(self._channels["atlas_id"])
         if "acronym" in self._channels:

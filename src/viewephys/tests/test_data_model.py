@@ -92,8 +92,8 @@ class TestLFPackDataModel:
         reader = lfpack.LFPackReader(h5)
         model = LFPackDataModel(reader)
 
-        # A packed file exposes a single, already-denoised signal.
-        assert model.get_steps() == ["raw"]
+        # A packed file exposes the denoised signal and its CSD.
+        assert model.get_steps() == ["raw", "csd"]
         assert model.get_num_channels() == 64
         assert model.get_sampling_frequency() == 250.0
         assert model.get_num_samples() == 6000
@@ -117,6 +117,13 @@ class TestLFPackDataModel:
         raw = model.get_raw(0, 100)
         assert raw.shape == (64, 100)
         assert np.array_equal(model.get_data(0, 100, "raw", raw=raw), raw)
+
+        # The CSD step returns a finite array of the same shape as the signal.
+        csd = model.get_data(0, 500, "csd")
+        assert csd.shape == (64, 500)
+        assert np.isfinite(csd).all()
+        # Header carries col/row so current_source_density has the layout.
+        assert "col" in header and "row" in header
 
     def test_no_annotations_has_no_brain_regions(self, tmp_path):
         lfpack = pytest.importorskip("lfpack")
