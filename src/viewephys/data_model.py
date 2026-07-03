@@ -364,12 +364,6 @@ class SpikeInterfaceDataModel(AbstractDataModel):
         for key in list(self.recordings_dict.keys())[1:]:
             rec = self.recordings_dict[key]
 
-            if rec.get_num_segments() != 1:
-                raise ValueError(
-                    "Currently `viewephys` only supports 1 segment recordings. "
-                    f"{key} has more than one."
-                )
-
             rec_has_locations = self._has_channel_locations(rec)
 
             if rec_has_locations != first_has_locations:
@@ -395,6 +389,10 @@ class SpikeInterfaceDataModel(AbstractDataModel):
         first_num_samples = self.first_recording.get_num_samples(segment_index=0)
         first_gains = self.first_recording.get_channel_gains()
         first_offsets = self.first_recording.get_channel_offsets()
+        first_num_segments = self.first_recording.get_num_segments()
+
+        if first_num_segments != 1:
+            raise ValueError("Only one segment recordings are supported.")
 
         if np.unique(first_gains).size != 1:
             raise ValueError(
@@ -409,6 +407,12 @@ class SpikeInterfaceDataModel(AbstractDataModel):
 
         for key in list(self.recordings_dict.keys())[1:]:
             rec = self.recordings_dict[key]
+
+            if rec.get_num_segments() != first_num_segments:
+                raise ValueError(
+                    "The recording {key} has more than one segment. "
+                    "This is not supported."
+                )
 
             if rec.get_sampling_frequency() != first_sampling_frequency:
                 raise ValueError(
