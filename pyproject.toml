@@ -27,6 +27,7 @@ dependencies = [
 
 
 [project.optional-dependencies]
+lfpack = ["lfpack", "iblatlas"]  # HDF5-packed LFP files; drags in h5py + PyWavelets
 dev = [
   "pytest",
   "pytest-qt",

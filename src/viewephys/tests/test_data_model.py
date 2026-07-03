@@ -9,7 +9,12 @@ from ibldsp import voltage
 from numpy.testing import assert_equal as np_assert_equal
 from spikeglx import Reader, _mock_spikeglx_file
 
-from viewephys.data_model import SpikeGLXDataModel, SpikeInterfaceDataModel
+from viewephys.data_model import (
+    LFPackDataModel,
+    SpikeGLXDataModel,
+    SpikeInterfaceDataModel,
+)
+from viewephys.tests.test_viewer_helpers import build_lfpack_h5
 
 
 class TestSpikeGLXDataModel:
@@ -77,6 +82,87 @@ class TestSpikeGLXDataModel:
 
         # Filtering alone is not tested.
         assert model.get_steps() == ["raw", "butterworth", "destripe", "broadband"]
+
+
+class TestLFPackDataModel:
+    def test_single_recording(self, tmp_path):
+        lfpack = pytest.importorskip("lfpack")
+        h5 = build_lfpack_h5(tmp_path / "lf.h5", "uuid-aaaa", nc=64, ns=6000)
+
+        reader = lfpack.LFPackReader(h5)
+        model = LFPackDataModel(reader)
+
+        # A packed file exposes a single, already-denoised signal.
+        assert model.get_steps() == ["raw"]
+        assert model.get_num_channels() == 64
+        assert model.get_sampling_frequency() == 250.0
+        assert model.get_num_samples() == 6000
+        assert model.get_recording_length() == pytest.approx(6000 / 250.0)
+        assert model.get_probe_information() == "Neuropixels LFP (lfpack)"
+        # No ADC saturation / voltage range in compressed files.
+        assert model.get_saturation_adc() is None
+        assert model.get_file_path() == h5
+
+        # Probe geometry is available as the trace header.
+        header = model.get_header()
+        assert "x" in header and "y" in header
+        assert header["x"].size == 64
+
+        # Data comes back channel-first, in volts.
+        data = model.get_data(0, 500, "raw")
+        assert data.shape == (64, 500)
+        assert data.dtype == np.float32
+
+        # get_data passes a pre-fetched raw buffer straight through.
+        raw = model.get_raw(0, 100)
+        assert raw.shape == (64, 100)
+        assert np.array_equal(model.get_data(0, 100, "raw", raw=raw), raw)
+
+    def test_no_annotations_has_no_brain_regions(self, tmp_path):
+        lfpack = pytest.importorskip("lfpack")
+        h5 = build_lfpack_h5(tmp_path / "lf.h5", "uuid-aaaa", nc=32, ns=4096)
+        model = LFPackDataModel(lfpack.LFPackReader(h5))
+
+        header = model.get_header()
+        assert "atlas_id" not in header
+        assert model.get_brain_regions() is None
+
+    def test_channel_annotations_and_brain_regions(self, tmp_path):
+        lfpack = pytest.importorskip("lfpack")
+        pytest.importorskip("iblatlas")
+        h5 = build_lfpack_h5(
+            tmp_path / "lf.h5", "uuid-aaaa", nc=32, ns=4096, annotate=True
+        )
+        model = LFPackDataModel(lfpack.LFPackReader(h5))
+
+        # Brain-region annotations flow into the channel/header table.
+        header = model.get_header()
+        assert "atlas_id" in header and "acronym" in header
+        assert header["atlas_id"].shape == (32,)
+        # acronym is an ndarray so it indexes like the numeric header fields.
+        assert isinstance(header["acronym"], np.ndarray)
+
+        # A single BrainRegions instance is built and reused.
+        br = model.get_brain_regions()
+        assert br is not None
+        assert hasattr(br, "id") and hasattr(br, "rgb")
+        assert model.get_brain_regions() is br
+
+    def test_recordings_listing_multi(self, tmp_path):
+        lfpack = pytest.importorskip("lfpack")
+        f1 = build_lfpack_h5(tmp_path / "a.h5", "uuid-aaaa", nc=32, ns=4096)
+        f2 = build_lfpack_h5(tmp_path / "b.h5", "uuid-bbbb", nc=32, ns=4096)
+        multi = tmp_path / "multi.h5"
+        lfpack.merge_h5([f1, f2], multi)
+
+        recordings = lfpack.LFPackReader.recordings(multi)
+        assert set(recordings) == {"uuid-aaaa", "uuid-bbbb"}
+
+        # Each recording opens into an independent, valid data model.
+        for rec in recordings:
+            model = LFPackDataModel(lfpack.LFPackReader(multi, recording=rec))
+            assert model.get_num_channels() == 32
+            assert model.get_num_samples() == 4096
 
 
 class TestSpikeInterfaceDataModel:

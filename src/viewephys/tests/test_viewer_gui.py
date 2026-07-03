@@ -2,9 +2,18 @@ import numpy as np
 import pytest
 from qtpy import QtCore, QtWidgets
 
-from viewephys.data_model import SpikeGLXDataModel
-from viewephys.gui import A_SCALAR, EphysBinViewer, create_app, viewephys
-from viewephys.tests.test_viewer_helpers import synthetic_seismic_data
+from viewephys.data_model import LFPackDataModel, SpikeGLXDataModel
+from viewephys.gui import (
+    A_SCALAR,
+    EphysBinViewer,
+    LFPackBinViewer,
+    create_app,
+    viewephys,
+)
+from viewephys.tests.test_viewer_helpers import (
+    build_lfpack_h5,
+    synthetic_seismic_data,
+)
 from viewephys.viewer.gui import EasyQC, viewseis
 
 
@@ -442,6 +451,102 @@ def test_window_size_change_displays_different_data(qtbot):
 
     window.close()
     window.deleteLater()
+
+
+def _open_lfpack_window(qtbot, monkeypatch, file):
+    """Build an LFPackBinViewer and open a file without spawning viewers."""
+    window = LFPackBinViewer()
+    qtbot.addWidget(window)
+    # Suppress viewer spawning so tests stay light and headless-safe.
+    monkeypatch.setattr(
+        window, "on_horizontalSliderReleased", lambda center_time=None: None
+    )
+    window.open_file(file=file)
+    return window
+
+
+def test_lfpack_single_recording_opens(qtbot, monkeypatch, tmp_path):
+    """A single-recording h5 opens as an LFPackDataModel with no selector."""
+    pytest.importorskip("lfpack")
+    h5 = build_lfpack_h5(tmp_path / "lf.h5", "uuid-aaaa", nc=64, ns=6000)
+    window = _open_lfpack_window(qtbot, monkeypatch, h5)
+
+    assert isinstance(window.data, LFPackDataModel)
+    assert list(window.cbs) == ["raw"]
+    # No recording selector for single-recording files.
+    assert not (
+        hasattr(window, "groupBox_recording") and window.groupBox_recording.isVisible()
+    )
+
+    window.close()
+    window.deleteLater()
+
+
+def test_lfpack_multi_recording_selector(qtbot, monkeypatch, tmp_path):
+    """A multi-recording h5 shows the selector and can switch recording."""
+    lfpack = pytest.importorskip("lfpack")
+    f1 = build_lfpack_h5(tmp_path / "a.h5", "uuid-aaaa", nc=32, ns=4096)
+    f2 = build_lfpack_h5(tmp_path / "b.h5", "uuid-bbbb", nc=32, ns=4096)
+    multi = tmp_path / "multi.h5"
+    lfpack.merge_h5([f1, f2], multi)
+
+    window = _open_lfpack_window(qtbot, monkeypatch, multi)
+
+    assert window.groupBox_recording.isVisible()
+    combo = window.comboBox_recording
+    recs = [combo.itemText(i) for i in range(combo.count())]
+    assert set(recs) == {"uuid-aaaa", "uuid-bbbb"}
+
+    first = window.data.sr._root.split("/")[0]
+    other_index = 1 - recs.index(first)
+
+    # Switching recording must keep the window size and position, not re-init.
+    window.window_length_n = 500
+    window._first_sample = 1000
+    window._on_recording_selected(other_index)
+    assert window.data.sr._root.split("/")[0] == recs[other_index]
+    assert window.window_length_n == 500
+    assert window._first_sample == 1000
+
+    window.close()
+    window.deleteLater()
+
+
+def test_lfpack_recording_selector_searchable(qtbot, monkeypatch, tmp_path):
+    """The selector is an editable combo box with a substring completer."""
+    lfpack = pytest.importorskip("lfpack")
+    f1 = build_lfpack_h5(tmp_path / "a.h5", "abc-1111", nc=32, ns=4096)
+    f2 = build_lfpack_h5(tmp_path / "b.h5", "xyz-2222", nc=32, ns=4096)
+    multi = tmp_path / "multi.h5"
+    lfpack.merge_h5([f1, f2], multi)
+
+    window = _open_lfpack_window(qtbot, monkeypatch, multi)
+    combo = window.comboBox_recording
+    assert combo.isEditable()
+
+    completer = combo.completer()
+    assert completer.filterMode() == QtCore.Qt.MatchFlag.MatchContains
+
+    # A leading substring matches exactly one uuid.
+    completer.setCompletionPrefix("xyz")
+    assert completer.completionCount() == 1
+    # A mid-string substring also matches (MatchContains, not prefix).
+    completer.setCompletionPrefix("222")
+    assert completer.completionCount() == 1
+    # A substring present in neither uuid matches nothing.
+    completer.setCompletionPrefix("zzz-none")
+    assert completer.completionCount() == 0
+
+    window.close()
+    window.deleteLater()
+
+
+@pytest.mark.parametrize("viewer_cls", [EphysBinViewer, LFPackBinViewer])
+def test_close_without_opening_file(qtbot, viewer_cls):
+    """Closing a viewer before any file is opened must not raise."""
+    window = viewer_cls()
+    qtbot.addWidget(window)
+    window.closeEvent(None)  # no self.viewers yet
 
 
 def test_auto_downsample_true_by_default(view_with_data):

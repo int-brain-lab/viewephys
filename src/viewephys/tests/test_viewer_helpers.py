@@ -1,4 +1,39 @@
+from pathlib import Path
+
 import numpy as np
+
+
+def build_lfpack_h5(
+    path: Path,
+    recording: str,
+    nc: int = 64,
+    ns: int = 6000,
+    fs: float = 250.0,
+    annotate: bool = False,
+) -> Path:
+    """Write a tiny single-recording lfpack HDF5 file for tests.
+
+    Requires the optional ``lfpack`` dependency; callers should guard with
+    ``pytest.importorskip('lfpack')``.  When ``annotate`` is True, per-channel
+    brain-region annotations (``atlas_id``/``acronym``) are stored so the
+    brain-region code path can be exercised.
+    """
+    import lfpack
+
+    rng = np.random.default_rng(0)
+    data = (rng.standard_normal((ns, nc)) * 1e-5).astype(np.float32)
+    npy = Path(path).with_suffix(".cadzow.npy")
+    np.save(npy, data)
+    channels = None
+    if annotate:
+        channels = {
+            "atlas_id": np.zeros(nc, dtype=np.int32),  # 0 = root, valid in br.id
+            "acronym": ["void"] * nc,
+        }
+    lfpack.compress_to_h5(
+        npy, path, recording=recording, fs=fs, n_jobs=1, channels=channels
+    )
+    return Path(path)
 
 
 def ricker(points: int, a: float) -> np.ndarray:

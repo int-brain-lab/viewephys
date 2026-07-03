@@ -17,7 +17,11 @@ from iblutil.numerical import ismember
 from neuropixel import trace_header
 from qtpy import QtCore, QtGui, QtWidgets, uic
 
-from viewephys.data_model import SpikeGLXDataModel, SpikeInterfaceDataModel
+from viewephys.data_model import (
+    LFPackDataModel,
+    SpikeGLXDataModel,
+    SpikeInterfaceDataModel,
+)
 from viewephys.viewer.gui import EasyQC
 from viewephys.viewer.qt import create_app
 
@@ -105,6 +109,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         """
         self.open_file(*args, live=True, **kwargs)
 
+    # File-dialog filter; subclasses widen it to expose more formats.
+    FILE_FILTER = "Electrophysiology files (*.*bin *.dat)"
+
     def open_file(
         self, *args, live: bool = False, file: str | Path | None = None
     ) -> None:
@@ -119,7 +126,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 parent=self,
                 caption="Select Raw electrophysiology recording",
                 directory=self.settings.value("bin_file_path"),
-                filter="Electrophysiology files (*.*bin *.dat)",
+                filter=self.FILE_FILTER,
             )
             if file == "":
                 return
@@ -127,18 +134,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if isinstance(file, (str, Path)):
             file = Path(file)
             self.settings.setValue("bin_file_path", str(file.parent))
-            ReaderClass = spikeglx.Reader if not live else spikeglx.OnlineReader
-            try:
-                sr = ReaderClass(file)
-            except AssertionError:
-                sr = spikeglx.Reader(
-                    file,
-                    dtype="int16",
-                    nc=384,
-                    fs=30000,
-                    ns=file.stat().st_size / 384 / 2,
-                )
-            self.data = SpikeGLXDataModel(sr)
+            self._open_path(file, live=live)
 
         elif isinstance(file, dict):
             self.data = SpikeInterfaceDataModel(file)
@@ -148,6 +144,25 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
         self._setup_viewers_and_checkboxes()
         self._setup_slider()
+
+    def _open_path(self, file: Path, live: bool = False) -> None:
+        """Build ``self.data`` from a file path.
+
+        Base implementation reads SpikeGLX binaries; subclasses override to
+        handle additional formats and fall back to ``super()`` for binaries.
+        """
+        ReaderClass = spikeglx.Reader if not live else spikeglx.OnlineReader
+        try:
+            sr = ReaderClass(file)
+        except AssertionError:
+            sr = spikeglx.Reader(
+                file,
+                dtype="int16",
+                nc=384,
+                fs=30000,
+                ns=file.stat().st_size / 384 / 2,
+            )
+        self.data = SpikeGLXDataModel(sr)
 
     def _setup_slider(self):
         num_samples = self.data.get_num_samples()
@@ -182,41 +197,38 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         """Repopulate viewers/cbs based on the current data model."""
         self.viewers: dict[str, EphysViewer | None]
 
-        if isinstance(self.data, SpikeGLXDataModel):
-            # If SpikeGLXDataModel is used, then offer the
-            # preprocessing options from the IBL
-            self.viewers = {
-                "butterworth": None,
-                "destripe": None,
-                "raw": None,
-                "broadband": None,
-            }
-            self.cbs = {
-                "butterworth": self.cb_butterworth_ap,
-                "broadband": self.cb_butterworth_lf,
-                "destripe": self.cb_destripe_ap,
-                "raw": self.cb_raw_ap,
-            }
+        # Pre-built descriptive checkboxes for the IBL SpikeGLX pipeline.
+        ibl_cbs = {
+            "raw": self.cb_raw_ap,
+            "butterworth": self.cb_butterworth_ap,
+            "broadband": self.cb_butterworth_lf,
+            "destripe": self.cb_destripe_ap,
+        }
+        # Clear any dynamic checkboxes added on a previous open (e.g. switching
+        # recording in a multi-recording lfpack file).
+        for cb in getattr(self, "_dynamic_cbs", []):
+            cb.setParent(None)
+            cb.deleteLater()
+        self._dynamic_cbs = []
+
+        steps = self.data.get_steps()
+        self.viewers = dict.fromkeys(steps)
+        if set(steps) == set(ibl_cbs):
+            # IBL SpikeGLX pipeline: reuse the descriptive checkboxes from the .ui
+            self.cbs = {step: ibl_cbs[step] for step in steps}
         else:
-            # Otherwise, if the data is a dict of spikeinterface
-            # recordings, hide the existing checkboxes and
-            # populate with the recording dict keys defined by the user
-            for cb in [
-                self.cb_raw_ap,
-                self.cb_butterworth_ap,
-                self.cb_butterworth_lf,
-                self.cb_destripe_ap,
-            ]:
+            # Any other model (SpikeInterface, lfpack, …): hide the pre-built
+            # checkboxes and build one checkbox per step returned by get_steps().
+            for cb in ibl_cbs.values():
                 cb.hide()
             layout = self.select_recording_groupbox.layout()
-            self.viewers = {}
             self.cbs = {}
-            for i, step in enumerate(self.data.get_steps()):
+            for i, step in enumerate(steps):
                 cb = QtWidgets.QCheckBox(step, self.select_recording_groupbox)
                 cb.setChecked(i == 0)
                 layout.addWidget(cb)
-                self.viewers[step] = None
                 self.cbs[step] = cb
+                self._dynamic_cbs.append(cb)
 
     def _create_top_label(self):
         """Create the label of recording details shown on the main window."""
@@ -372,6 +384,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 data,
                 self.data.get_sampling_frequency(),
                 channels=self.data.get_header(),
+                br=self.data.get_brain_regions(),
                 title=k,
                 t0=t0 * T_SCALAR,
                 t_scalar=T_SCALAR,
@@ -414,11 +427,115 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         TODO: if we set the EphysViewer windows as children of
         this window, Qt will automatically handle the window close.
         """
-        for k in self.viewers:
-            ev = self.viewers[k]
+        # self.viewers only exists once a file has been opened.
+        for ev in getattr(self, "viewers", {}).values():
             if ev is not None:
                 ev.close()
         self.close()
+
+
+class LFPackBinViewer(EphysBinViewer):
+    """Ephys viewer for lfpack HDF5-packed LFP files.
+
+    Extends :class:`EphysBinViewer` with support for the ``.h5`` archives
+    produced by ``lfpack``.  A file may hold a single recording or many keyed
+    by probe-insertion UUID; in the latter case a searchable combo box lets the
+    user switch recording.  SpikeGLX binaries still open through the inherited
+    machinery, so a single window handles both formats.
+    """
+
+    FILE_FILTER = "Electrophysiology files (*.*bin *.dat *.h5 *.hdf5)"
+
+    def _open_path(self, file: Path, live: bool = False) -> None:
+        if file.suffix.lower() in (".h5", ".hdf5"):
+            self._open_lfpack(file)
+        else:
+            self._hide_recording_selector()
+            super()._open_path(file, live=live)
+
+    def _open_lfpack(self, file: Path) -> None:
+        """Open an lfpack HDF5 file, wiring up the recording selector.
+
+        A file may hold a single recording (opened directly) or many keyed by
+        probe-insertion UUID, in which case a searchable selector is shown and
+        the first recording is opened.
+        """
+        try:
+            import lfpack
+        except ImportError as e:
+            raise ImportError(
+                "Reading lfpack HDF5 files requires the optional 'lfpack' "
+                "dependency. Install it with: pip install viewephys[lfpack]"
+            ) from e
+
+        self._lfpack_file = file
+        recordings = lfpack.LFPackReader.recordings(file)
+        if len(recordings) > 1:
+            self._build_recording_selector(recordings)
+            recording = recordings[0]
+        else:
+            self._hide_recording_selector()
+            # An empty list means the legacy single-recording layout.
+            recording = recordings[0] if recordings else None
+
+        reader = lfpack.LFPackReader(file, recording=recording)
+        self.data = LFPackDataModel(reader)
+
+    def _build_recording_selector(self, recordings: list[str]) -> None:
+        """Show a searchable combo box to pick a recording by UUID substring."""
+        if not hasattr(self, "comboBox_recording"):
+            self.groupBox_recording = QtWidgets.QGroupBox("Recording", self.widget_2)
+            layout = QtWidgets.QVBoxLayout(self.groupBox_recording)
+            self.comboBox_recording = QtWidgets.QComboBox(self.groupBox_recording)
+            self.comboBox_recording.setEditable(True)
+            self.comboBox_recording.setInsertPolicy(
+                QtWidgets.QComboBox.InsertPolicy.NoInsert
+            )
+            completer = self.comboBox_recording.completer()
+            completer.setCompletionMode(
+                QtWidgets.QCompleter.CompletionMode.PopupCompletion
+            )
+            completer.setFilterMode(QtCore.Qt.MatchFlag.MatchContains)
+            completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+            layout.addWidget(self.comboBox_recording)
+            # Sits next to the "Select recording" / "Dataset info" group boxes.
+            self.widget_2.layout().addWidget(self.groupBox_recording, 0, 2)
+            self.comboBox_recording.activated.connect(self._on_recording_selected)
+
+        combo = self.comboBox_recording
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(recordings)
+        combo.setCurrentIndex(0)
+        combo.blockSignals(False)
+        self.groupBox_recording.show()
+
+    def _hide_recording_selector(self) -> None:
+        """Hide the recording selector if it was built for a previous file."""
+        if hasattr(self, "groupBox_recording"):
+            self.groupBox_recording.hide()
+
+    def _on_recording_selected(self, index: int) -> None:
+        """Swap in the chosen recording, keeping the window size, position and zoom."""
+        import lfpack
+
+        recording = self.comboBox_recording.itemText(index)
+        reader = lfpack.LFPackReader(self._lfpack_file, recording=recording)
+        self.data = LFPackDataModel(reader)
+
+        # Refresh slider bounds and clamp position into range; keep window and zoom.
+        self.update_slider_limits()
+        max_first = max(0, self.data.get_num_samples() - self.window_length_n)
+        self._first_sample = min(self._first_sample, max_first)
+        slider_value = min(
+            int(round(self._first_sample / self.window_length_n)),
+            self.horizontalSlider.maximum(),
+        )
+        self.horizontalSlider.blockSignals(True)
+        self.horizontalSlider.setValue(slider_value)
+        self.horizontalSlider.blockSignals(False)
+        self._update_time_label()
+        self.on_horizontalSliderReleased()
 
 
 class PickSpikes:
