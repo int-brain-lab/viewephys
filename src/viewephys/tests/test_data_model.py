@@ -346,8 +346,11 @@ class TestSpikeInterfaceDataModel:
     def test_get_steps_returns_recording_dict_keys(self):
         """get_steps() must reflect the keys the caller passed in."""
         rec = si_core.generate_recording(
-            num_channels=4, sampling_frequency=30000.0,
-            durations=[0.1], set_probe=False, seed=0,
+            num_channels=4,
+            sampling_frequency=30000.0,
+            durations=[0.1],
+            set_probe=False,
+            seed=0,
         )
         filtered = si_prepro.bandpass_filter(rec, freq_min=300, freq_max=6000)
         model = SpikeInterfaceDataModel({"raw": rec, "filtered": filtered})
