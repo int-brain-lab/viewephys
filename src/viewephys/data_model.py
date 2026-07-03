@@ -410,8 +410,8 @@ class SpikeInterfaceDataModel(AbstractDataModel):
 
             if rec.get_num_segments() != first_num_segments:
                 raise ValueError(
-                    "The recording {key} has more than one segment. "
-                    "This is not supported."
+                    f"The recording {key} has more than one segment. "
+                    f"This is not supported."
                 )
 
             if rec.get_sampling_frequency() != first_sampling_frequency:
