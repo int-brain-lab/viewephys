@@ -31,19 +31,22 @@ class AbstractDataModel(abc.ABC):
     def get_recording_length(self) -> float: ...
 
     @abc.abstractmethod
-    def get_file_path(self) -> Path: ...
+    def get_file_path(self) -> Path | None: ...
 
     @abc.abstractmethod
-    def get_neuropixels_version(self) -> int: ...
+    def get_probe_information(self) -> str | None: ...
 
     @abc.abstractmethod
     def get_num_channels(self) -> int: ...
 
     @abc.abstractmethod
-    def get_saturation_adc(self) -> float: ...
+    def get_saturation_adc(self) -> float | None: ...
 
     @abc.abstractmethod
     def get_header(self) -> dict: ...
+
+    @abc.abstractmethod
+    def get_steps(self) -> list[str]: ...
 
 
 class SpikeGLXDataModel(AbstractDataModel):
@@ -126,6 +129,11 @@ class SpikeGLXDataModel(AbstractDataModel):
 
         return data
 
+    @override
+    def get_steps(self) -> list[str]:
+        """Available preprocessing steps for IBL pipeline recordings."""
+        return ["raw", "butterworth", "destripe", "broadband"]
+
     def get_raw(self, start_sample: int, end_sample: int) -> np.ndarray:
         """Return raw data as ``(n_channels, n_samples)``, sync channels excluded."""
         return self.sr[start_sample:end_sample, : self.sr.nc - self.sr.nsync].T
@@ -159,9 +167,8 @@ class SpikeGLXDataModel(AbstractDataModel):
         return self.sr.file_bin
 
     @override
-    def get_neuropixels_version(self) -> int:
-        """Neuropixels probe major version."""
-        return self.sr.major_version
+    def get_probe_information(self) -> str:
+        return f"Neuropixels v{self.sr.major_version}"
 
     @override
     def get_num_channels(self) -> int:
@@ -169,6 +176,317 @@ class SpikeGLXDataModel(AbstractDataModel):
         return self.sr.nc
 
     @override
-    def get_saturation_adc(self) -> float:
+    def get_saturation_adc(self) -> float | None:
         """ADC saturation level in µV."""
         return self.sr.range_volts[0] * 1e6
+
+
+class SpikeInterfaceDataModel(AbstractDataModel):
+    def __init__(self, recordings_dict):
+        self.recordings_dict = recordings_dict
+
+        self.first_recording = recordings_dict[(next(iter(recordings_dict)))]
+        self.first_key = list(recordings_dict.keys())[0]
+
+        self.perform_checks_on_recordings()
+
+    @override
+    def get_data(
+        self,
+        start_sample: int,
+        end_sample: int,
+        step: str,
+        raw: np.ndarray | None = None,
+    ) -> np.ndarray:
+        assert step in self.recordings_dict, (
+            "somehow the step names have become disconnected"
+        )
+        return (
+            self.recordings_dict[step]
+            .get_traces(
+                start_frame=start_sample,
+                end_frame=end_sample,
+                return_in_uV=True,
+                segment_index=0,
+            )
+            .T
+        )
+
+    def get_raw(self, start_sample: int, end_sample: int) -> None:
+        """SpikeInterface recordings carry their own preprocessing chain"""
+        return None
+
+    @override
+    def get_steps(self) -> list[str]:
+        """Available steps are the keys of the recordings dict provided by the user."""
+        return list(self.recordings_dict)
+
+    @override
+    def get_header(self) -> dict:
+        """Fill the header information from the SpikeInterface probe.
+
+        Note that `shank_ids` is an array of strings. When empty,
+        it is `None` or an array of empty strings, depending on the
+        probeinterface version. If the shank ids are filled in, they
+        can be converted to int (e.g. `1`, `2`, ...) or might not be
+        (e.g. `s1`, `s2`, ...) depending on the probe.
+        """
+        num_channels = self.first_recording.get_num_channels()
+
+        # Handle the case where no channel locations can be found
+        if not self._has_channel_locations(self.first_recording):
+            geom = {"trace": np.arange(num_channels)}
+            return geom
+
+        # Handle the second case, where channel locations are found
+        # but the recording does not have a probe attached
+        if (
+            not self.first_recording.has_probe()
+            or self.first_recording.get_probe().shank_ids is None
+            or self.first_recording.get_probe().shank_ids[0] == ""
+        ):
+            positions = (
+                self.first_recording.get_channel_locations()
+            )  # (n_contacts, 2) in µm
+
+            geom = {
+                "trace": np.arange(num_channels),
+                "x": positions[:, 0],
+                "y": positions[:, 1],
+            }
+            return geom
+
+        # Finally, the best case where a full probe is attached and we
+        # can add shank and row/col information.
+        probe = self.first_recording.get_probe()
+        positions = probe.contact_positions  # (n_contacts, 2) in µm
+
+        _, row = np.unique(positions[:, 1], return_inverse=True)
+
+        # col is computed per-shank so shank-relative x values are ranked correctly
+        col = np.zeros(num_channels, dtype=float)
+        for shank_id in np.unique(probe.shank_ids):
+            mask = probe.shank_ids == shank_id
+            _, col[mask] = np.unique(positions[mask, 0], return_inverse=True)
+
+        # We want the geom dict in the same order as SpikeGLXDataModel.
+        # First, add the traces
+        geom = {"trace": np.arange(num_channels)}
+
+        # Then if we can convert the shank ids from str to int, add these
+        if self._can_convert_shank_ids_to_int(probe.shank_ids):
+            geom.update({"shank": probe.shank_ids.astype(int)})
+
+        # Finally add all other options in the same order as SpikeGLXDataModel
+        geom.update(
+            {
+                "x": positions[:, 0],
+                "y": positions[:, 1],
+                "col": col,
+                "row": row.astype(int),
+            }
+        )
+
+        if (
+            sample_shift := self.first_recording.get_property("inter_sample_shift")
+        ) is not None:
+            geom["sample_shift"] = np.asarray(sample_shift, dtype=float)
+
+        if (adc := probe.contact_annotations.get("adc_group")) is not None:
+            geom["adc"] = np.asarray(adc, dtype=int)
+
+        if probe.device_channel_indices is not None:
+            geom["ind"] = probe.device_channel_indices.astype(int)
+
+        return geom
+
+    def _can_convert_shank_ids_to_int(self, shank_ids):
+        try:
+            shank_ids.astype(int)
+            return True
+        except ValueError:
+            return False
+
+    @override
+    def get_num_samples(self) -> int:
+        return self.first_recording.get_num_samples(segment_index=0)
+
+    @override
+    def get_sampling_frequency(self) -> float:
+        return self.first_recording.get_sampling_frequency()
+
+    @override
+    def get_recording_length(self) -> float:
+        """
+        Get the duration of the recording.
+
+        SpikeInterface has a `get_times()` function
+        that in theory can return a time array with
+        non-constant sampling or sampling rate drift.
+        We calculate from the times array, and use the
+        fs as an approximation for the last sample, so
+        the calculation convention is the same as other
+        conditional paths.
+        """
+        times = self.first_recording.get_times()
+        if times is not None:
+            return (times[-1] - times[0]) + 1 / self.get_sampling_frequency()
+        else:
+            return self.get_num_samples() / self.get_sampling_frequency()
+
+    @override
+    def get_file_path(self) -> None:
+        # SpikeInterface recordings are not necessarily file-backed.
+        return None
+
+    @override
+    def get_probe_information(self) -> str | None:
+        if self.first_recording.has_probe():
+            probe = self.first_recording.get_probe()
+            a = probe.annotations
+            parts = [a.get("manufacturer"), a.get("model_name"), a.get("serial_number")]
+            return ", ".join(p for p in parts if p) or None
+        else:
+            return None
+
+    @override
+    def get_num_channels(self) -> int:
+        return self.first_recording.get_num_channels()
+
+    @override
+    def get_saturation_adc(self) -> None:
+        # ADC saturation range is hardware-specific and not available through
+        # the SpikeInterface API.
+        return None
+
+    def perform_checks_on_recordings(self):  # noqa
+        """ """
+        first_has_locations = self._has_channel_locations(self.first_recording)
+        has_probe = self.first_recording.has_probe()
+
+        if has_probe and len(self.first_recording.get_probegroup().probes) > 1:
+            # We do not currently support multiple probes.
+            raise NotImplementedError(
+                "Multi-probe recordings are not supported yet. "
+                "Please raise an issue on the viewephys GitHub "
+                "if you would like to see this implemented."
+            )
+
+        # First, check that recordings and not multi segment and that
+        # all recordings either have channel locations / probes or do not.
+        for key in list(self.recordings_dict.keys())[1:]:
+            rec = self.recordings_dict[key]
+
+            rec_has_locations = self._has_channel_locations(rec)
+
+            if rec_has_locations != first_has_locations:
+                raise ValueError(
+                    "The first recording "
+                    f"{self.first_key} and recording {key} do not have the "
+                    "same recording locations state. "
+                    "Either all recordings must have contact locations or none "
+                    "of them."
+                )
+
+            if rec.has_probe() != has_probe:
+                raise ValueError(
+                    "The first recording "
+                    f"{self.first_key} and recording {key} do not have the "
+                    "same probe attach state. "
+                    "Either all recordings must have a probe attached or none "
+                    "of them."
+                )
+
+        # Validate that all recordings match on basic acquisition properties.
+        first_sampling_frequency = self.first_recording.get_sampling_frequency()
+        first_num_samples = self.first_recording.get_num_samples(segment_index=0)
+        first_gains = self.first_recording.get_channel_gains()
+        first_offsets = self.first_recording.get_channel_offsets()
+        first_num_segments = self.first_recording.get_num_segments()
+
+        if first_num_segments != 1:
+            raise ValueError("Only one segment recordings are supported.")
+
+        if np.unique(first_gains).size != 1:
+            raise ValueError(
+                "All channels in the first recording "
+                f"{self.first_key} must share the same gain."
+            )
+        if np.unique(first_offsets).size != 1:
+            raise ValueError(
+                "All channels in the first recording "
+                f"{self.first_key} must share the same offset."
+            )
+
+        for key in list(self.recordings_dict.keys())[1:]:
+            rec = self.recordings_dict[key]
+
+            if rec.get_num_segments() != first_num_segments:
+                raise ValueError(
+                    f"The recording {key} has more than one segment. "
+                    f"This is not supported."
+                )
+
+            if rec.get_sampling_frequency() != first_sampling_frequency:
+                raise ValueError(
+                    "The sampling frequency for recording "
+                    f"{key} ({rec.get_sampling_frequency()} Hz) does not "
+                    "match the first recording "
+                    f"{self.first_key} ({first_sampling_frequency} Hz)."
+                )
+
+            if rec.get_num_samples(segment_index=0) != first_num_samples:
+                raise ValueError(
+                    "The number of samples for recording "
+                    f"{key} ({rec.get_num_samples(segment_index=0)}) does "
+                    "not match the first recording "
+                    f"{self.first_key} ({first_num_samples})."
+                )
+
+            if not np.array_equal(rec.get_channel_gains(), first_gains):
+                raise ValueError(
+                    "The channel gains for recording "
+                    f"{key} do not match the first recording "
+                    f"{self.first_key}."
+                )
+
+            if not np.array_equal(rec.get_channel_offsets(), first_offsets):
+                raise ValueError(
+                    "The channel offsets for recording "
+                    f"{key} do not match the first recording "
+                    f"{self.first_key}."
+                )
+
+            # Check that if the recordings have channel locations, they match
+            if first_has_locations and not np.array_equal(
+                self.first_recording.get_channel_locations(),
+                rec.get_channel_locations(),
+            ):
+                raise ValueError(
+                    f"The channel locations for the first recording "
+                    f"and {key} do not match."
+                )
+
+            # Check that if the recordings have a probe, they match
+            if has_probe:
+                rec_probe = rec.get_probe()
+                first_probe = self.first_recording.get_probe()
+                if not np.array_equal(
+                    rec_probe.contact_positions, first_probe.contact_positions
+                ):
+                    raise ValueError(
+                        "The contact locations on the probe do not match "
+                        f"between recordings {self.first_key} and {key}"
+                    )
+                if not np.array_equal(rec_probe.shank_ids, first_probe.shank_ids):
+                    raise ValueError(
+                        "The shank IDs on the probe do not match between "
+                        f"recordings {self.first_key} and {key}"
+                    )
+
+    def _has_channel_locations(self, recording) -> bool:
+        try:
+            recording.get_channel_locations()
+            return True
+        except Exception:
+            return False

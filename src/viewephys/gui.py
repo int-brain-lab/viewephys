@@ -17,7 +17,7 @@ from iblutil.numerical import ismember
 from neuropixel import trace_header
 from qtpy import QtCore, QtGui, QtWidgets, uic
 
-from viewephys.data_model import SpikeGLXDataModel
+from viewephys.data_model import SpikeGLXDataModel, SpikeInterfaceDataModel
 from viewephys.viewer.gui import EasyQC
 from viewephys.viewer.qt import create_app
 
@@ -42,7 +42,9 @@ SNS_PALETTE = [
 
 
 class EphysBinViewer(QtWidgets.QMainWindow):
-    def __init__(self, bin_file: str | Path | None = None, *args, **kwargs):
+    def __init__(
+        self, bin_file: str | Path | None = None, *args, **kwargs
+    ):  # TODO: TYPE
         """
         Class for viewing a binary file output from SpikeGLX.
 
@@ -92,23 +94,10 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self._update_time_label()
         self.show()
 
-        self.viewers: dict[str, EphysViewer | None]
-        self.viewers = {
-            "butterworth": None,
-            "destripe": None,
-            "raw": None,
-            "broadband": None,
-        }
-        self.cbs = {
-            "butterworth": self.cb_butterworth_ap,
-            "broadband": self.cb_butterworth_lf,
-            "destripe": self.cb_destripe_ap,
-            "raw": self.cb_raw_ap,
-        }
-        self.data: SpikeGLXDataModel
+        self.data: SpikeGLXDataModel | SpikeInterfaceDataModel
 
         if bin_file is not None:
-            self.open_file(file=bin_file)  # set self.data
+            self.open_file(file=bin_file)
 
     def open_file_live(self, *args, **kwargs) -> None:
         """
@@ -135,33 +124,51 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if file == "":
                 return
 
-        file = Path(file)
-        self.settings.setValue("bin_file_path", str(file.parent))
-        ReaderClass = spikeglx.Reader if not live else spikeglx.OnlineReader
-        try:
-            sr = ReaderClass(file)
-        except AssertionError:
-            sr = spikeglx.Reader(
-                file, dtype="int16", nc=384, fs=30000, ns=file.stat().st_size / 384 / 2
-            )
-        self.data = SpikeGLXDataModel(sr)
+        if isinstance(file, (str, Path)):
+            file = Path(file)
+            self.settings.setValue("bin_file_path", str(file.parent))
+            ReaderClass = spikeglx.Reader if not live else spikeglx.OnlineReader
+            try:
+                sr = ReaderClass(file)
+            except AssertionError:
+                sr = spikeglx.Reader(
+                    file,
+                    dtype="int16",
+                    nc=384,
+                    fs=30000,
+                    ns=file.stat().st_size / 384 / 2,
+                )
+            self.data = SpikeGLXDataModel(sr)
 
+        elif isinstance(file, dict):
+            self.data = SpikeInterfaceDataModel(file)
+
+        else:
+            return
+
+        self._setup_viewers_and_checkboxes()
+        self._setup_slider()
+
+    def _setup_slider(self):
+        num_samples = self.data.get_num_samples()
+        sampling_frequency = self.data.get_sampling_frequency()
+
+        # enable and set slider, based on the number of samples in the entire file
+        self.horizontalSlider.setMaximum(
+            int(np.floor(num_samples / self.window_length_n))
+        )
+        tmax = (
+            np.floor(num_samples / self.window_length_n)
+            * self.window_length_n
+            / sampling_frequency
+        )
+        self.label_smax.setText(f"{tmax:0.2f}s")
+
+        tlabel = self._create_top_label()
         self.update_slider_limits()
 
-        neuropixel_version = self.data.get_neuropixels_version()
-        neuropixel_label = (
-            f"NEUROPIXEL {neuropixel_version} \n" if neuropixel_version else ""
-        )
-
-        tlabel = (
-            f"{self.data.get_file_path()} \n \n"
-            f"{neuropixel_label}"
-            f"{self.data.get_recording_length()} seconds long \n"
-            f"{self.data.get_sampling_frequency()} Hz Sampling Frequency \n"
-            f"{self.data.get_num_channels()} Channels \n"
-            f"Saturation ADC at {self.data.get_saturation_adc()} uV \n"
-        )
         self.label.setText(tlabel)
+
         self.horizontalSlider.setValue(0)
         self._first_sample = 0
         self.horizontalSlider.setEnabled(True)
@@ -170,6 +177,69 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.on_horizontalSliderReleased()
         self.lineEdit_windowSize.setEnabled(True)
         self.update_window_lineedit()
+
+    def _setup_viewers_and_checkboxes(self) -> None:
+        """Repopulate viewers/cbs based on the current data model."""
+        self.viewers: dict[str, EphysViewer | None]
+
+        if isinstance(self.data, SpikeGLXDataModel):
+            # If SpikeGLXDataModel is used, then offer the
+            # preprocessing options from the IBL
+            self.viewers = {
+                "butterworth": None,
+                "destripe": None,
+                "raw": None,
+                "broadband": None,
+            }
+            self.cbs = {
+                "butterworth": self.cb_butterworth_ap,
+                "broadband": self.cb_butterworth_lf,
+                "destripe": self.cb_destripe_ap,
+                "raw": self.cb_raw_ap,
+            }
+        else:
+            # Otherwise, if the data is a dict of spikeinterface
+            # recordings, hide the existing checkboxes and
+            # populate with the recording dict keys defined by the user
+            for cb in [
+                self.cb_raw_ap,
+                self.cb_butterworth_ap,
+                self.cb_butterworth_lf,
+                self.cb_destripe_ap,
+            ]:
+                cb.hide()
+            layout = self.select_recording_groupbox.layout()
+            self.viewers = {}
+            self.cbs = {}
+            for i, step in enumerate(self.data.get_steps()):
+                cb = QtWidgets.QCheckBox(step, self.select_recording_groupbox)
+                cb.setChecked(i == 0)
+                layout.addWidget(cb)
+                self.viewers[step] = None
+                self.cbs[step] = cb
+
+    def _create_top_label(self):
+        """Create the label of recording details shown on the main window."""
+        file_path = self.data.get_file_path()
+        file_path_label = f"{file_path} \n \n" if file_path else ""
+
+        probe_info = self.data.get_probe_information()
+        probe_label = f"{probe_info} \n" if probe_info else ""
+
+        saturation_adc = self.data.get_saturation_adc()
+        saturation_label = (
+            f"Saturation ADC at {saturation_adc} uV \n" if saturation_adc else ""
+        )
+
+        tlabel = (
+            f"{file_path_label}"
+            f"{probe_label}"
+            f"{self.data.get_recording_length()} seconds long \n"
+            f"{self.data.get_sampling_frequency()} Hz Sampling Frequency \n"
+            f"{self.data.get_num_channels()} Channels \n"
+            f"{saturation_label}"
+        )
+        return tlabel
 
     def on_horizontalSliderValueChanged(self) -> None:
         self._first_sample = int(self.horizontalSlider.value()) * self.window_length_n
@@ -307,6 +377,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 t_scalar=T_SCALAR,
                 a_scalar=A_SCALAR,
             )
+            if isinstance(self.data, SpikeInterfaceDataModel):
+                # reorder the spikeinterface channel ordering to match SpikeGLXReader.
+                # "shank" is only present when shank ids can be cast to int, so fall
+                # back to sorting by position alone when it is absent.
+                sort_keys = ["!x", "y"]
+                if "shank" in viewer.model.header:
+                    sort_keys.append("shank")
+                viewer.ctrl.sort(sort_keys)
+
             self.viewers[k] = viewer
 
             prev = prev_ranges.get(k)

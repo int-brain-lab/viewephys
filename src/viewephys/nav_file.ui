@@ -22,7 +22,7 @@
      <widget class="QWidget" name="widget_2" native="true">
       <layout class="QGridLayout" name="gridLayout_2">
        <item row="0" column="0">
-        <widget class="QGroupBox" name="groupBox">
+        <widget class="QGroupBox" name="select_recording_groupbox">
          <property name="font">
           <font>
            <weight>75</weight>
