@@ -45,6 +45,9 @@ class AbstractDataModel(abc.ABC):
     @abc.abstractmethod
     def get_header(self) -> dict: ...
 
+    @abc.abstractmethod
+    def get_steps(self) -> list[str]: ...
+
 
 class SpikeGLXDataModel(AbstractDataModel):
     """Data model wrapping ``spikeglx.Reader``."""
@@ -125,6 +128,11 @@ class SpikeGLXDataModel(AbstractDataModel):
                 data = scipy.signal.sosfiltfilt(sos, raw)
 
         return data
+
+    @override
+    def get_steps(self) -> list[str]:
+        """Available preprocessing steps for IBL pipeline recordings."""
+        return ["raw", "butterworth", "destripe", "broadband"]
 
     def get_raw(self, start_sample: int, end_sample: int) -> np.ndarray:
         """Return raw data as ``(n_channels, n_samples)``, sync channels excluded."""
@@ -207,6 +215,11 @@ class SpikeInterfaceDataModel(AbstractDataModel):
     def get_raw(self, start_sample: int, end_sample: int) -> None:
         """SpikeInterface recordings carry their own preprocessing chain"""
         return None
+
+    @override
+    def get_steps(self) -> list[str]:
+        """Available steps are the keys of the recordings dict provided by the user."""
+        return list(self.recordings_dict)
 
     @override
     def get_header(self) -> dict:
