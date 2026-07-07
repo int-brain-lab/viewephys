@@ -10,6 +10,7 @@
 - `spikeinterface` added as a dependency
 - `SpikeGLXDataModel` interface layer decouples data access from the viewer, laying the groundwork for a future SpikeInterface backend ([#30](https://github.com/int-brain-lab/viewephys/pull/30), thanks @JoeZiminski)
 - Channels can now be sorted in descending order by prefixing the sort key with `!` (e.g. `"!depth"`); `lexsort` only supports ascending order, so the key values are negated before sorting ([#32](https://github.com/int-brain-lab/viewephys/pull/32), thanks @JoeZiminski)
+- Optional LFPack (HDF5-packed LFP files) backend: opens single- and multi-recording lfpack files with a searchable recording selector, brain-region coloring from channel annotations, a current-source-density processing step, and preserved window/zoom on recording switch ([#49](https://github.com/int-brain-lab/viewephys/pull/49))
 
 ### changed
 - EphysBinViewer main window reorganised: the separate "Jump to" field has been merged into the slider value lineedit — the current sample is shown there directly and typing a time then pressing Enter navigates to that position ([#38](https://github.com/int-brain-lab/viewephys/pull/38), thanks @JoeZiminski)
