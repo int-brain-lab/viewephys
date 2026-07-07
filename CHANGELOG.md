@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-07
+
 ### added
 - `examples/` folder with `from_binary.py` and `from_array.py` demonstrating script usage ([#29](https://github.com/int-brain-lab/viewephys/pull/29), thanks @JoeZiminski)
 - README expanded with script-usage instructions showing the `create_app()` / `app.exec()` pattern
