@@ -48,6 +48,14 @@ class AbstractDataModel(abc.ABC):
     @abc.abstractmethod
     def get_steps(self) -> list[str]: ...
 
+    def get_brain_regions(self) -> object | None:
+        """Return an ``iblatlas`` ``BrainRegions`` for atlas coloring, if any.
+
+        Defaults to ``None`` (no brain-region annotations); backends that carry
+        per-channel ``atlas_id`` in their header override this.
+        """
+        return None
+
 
 class SpikeGLXDataModel(AbstractDataModel):
     """Data model wrapping ``spikeglx.Reader``."""
@@ -179,6 +187,95 @@ class SpikeGLXDataModel(AbstractDataModel):
     def get_saturation_adc(self) -> float | None:
         """ADC saturation level in µV."""
         return self.sr.range_volts[0] * 1e6
+
+
+class LFPackDataModel(SpikeGLXDataModel):
+    """Data model for lfpack HDF5-packed LFP files.
+
+    Wraps an ``lfpack.LFPackReader`` (a drop-in ``spikeglx.Reader``).  The data
+    is already decompressed and denoised, so the steps are the ``"raw"`` signal
+    and its current-source density (``"csd"``).  Most methods are inherited from
+    :class:`SpikeGLXDataModel`; only those relying on SpikeGLX metadata absent
+    from compressed files, or specific to lfpack, are overridden.
+    """
+
+    @override
+    def get_steps(self) -> list[str]:
+        """Denoised signal and its current-source density."""
+        return ["raw", "csd"]
+
+    @override
+    def get_data(
+        self,
+        start_sample: int,
+        end_sample: int,
+        step: str,
+        raw: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Return the raw signal or its current-source density.
+
+        The ``"csd"`` step computes the CSD via
+        :func:`ibldsp.voltage.current_source_density`; other steps defer to the
+        inherited (raw pass-through) implementation.
+        """
+        if step != "csd":
+            return super().get_data(start_sample, end_sample, step, raw=raw)
+        if raw is None:
+            raw = self.get_raw(start_sample, end_sample)
+        return voltage.current_source_density(raw, h=self.get_header())
+
+    @override
+    def get_probe_information(self) -> str:
+        return "Neuropixels LFP (lfpack)"
+
+    @override
+    def get_saturation_adc(self) -> None:
+        """No ADC saturation level: compressed files carry no voltage range."""
+        return None
+
+    @property
+    def _channels(self) -> dict:
+        """Per-channel info from the file, read once and cached.
+
+        Static per recording, so a single read backs both the header and the
+        brain-region lookup (a new model is built when the recording changes).
+        """
+        if getattr(self, "_channels_cache", None) is None:
+            self._channels_cache = self.sr.channels_full
+        return self._channels_cache
+
+    @override
+    def get_header(self) -> dict:
+        """Probe geometry plus brain-region annotations when present.
+
+        Adds ``col``/``row`` (derived from ``x``/``y``) so the CSD step has the
+        column/row layout it needs, and ``atlas_id``/``acronym`` from the file's
+        per-channel annotations so the viewer can draw a brain-region strip.
+        ``acronym`` is an ndarray so it indexes like the numeric header fields.
+        """
+        header = dict(self.sr.geometry)
+        _, header["col"] = np.unique(np.asarray(header["x"]), return_inverse=True)
+        _, header["row"] = np.unique(np.asarray(header["y"]), return_inverse=True)
+        if "atlas_id" in self._channels:
+            header["atlas_id"] = np.asarray(self._channels["atlas_id"])
+        if "acronym" in self._channels:
+            header["acronym"] = np.asarray(self._channels["acronym"])
+        return header
+
+    @override
+    def get_brain_regions(self) -> object | None:
+        """BrainRegions instance when the file carries ``atlas_id``, else None.
+
+        The (moderately expensive) ``BrainRegions`` object is built lazily on
+        first use and cached for the lifetime of the model.
+        """
+        if "atlas_id" not in self._channels:
+            return None
+        if getattr(self, "_brain_regions", None) is None:
+            from iblatlas.regions import BrainRegions
+
+            self._brain_regions = BrainRegions()
+        return self._brain_regions
 
 
 class SpikeInterfaceDataModel(AbstractDataModel):
