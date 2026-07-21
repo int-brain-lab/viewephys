@@ -108,7 +108,19 @@ class EasyQC(QtWidgets.QMainWindow):
         app = QtWidgets.QApplication.instance()
         if app is None:
             app = qt.create_app()
-        return [w for w in app.topLevelWidgets() if isinstance(w, EasyQC)]
+        instances = []
+        for w in app.topLevelWidgets():
+            if not isinstance(w, EasyQC):
+                continue
+            # A wrapper whose C++ object was deleted (e.g. via deleteLater) still
+            # passes isinstance but raises RuntimeError on any method call. Probe
+            # cheaply and skip such stale wrappers so callers never touch them.
+            try:
+                w.objectName()
+            except RuntimeError:
+                continue
+            instances.append(w)
+        return instances
 
     @staticmethod
     def _get_or_create(title=None):

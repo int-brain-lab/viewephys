@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 import numpy as np
 import pyqtgraph as pg
 import pytest
@@ -614,6 +616,29 @@ def test_propagate_link_keeps_headers_attached(qtbot, synthetic_seis):
     qtbot.wait(20)
     assert list(s_other.viewRange()[0]) == pytest.approx([5, 15])
     assert list(h_other.viewRange()[0]) == pytest.approx([5, 15])
+
+
+def test_instances_skips_deleted_wrappers(qtbot, monkeypatch):
+    """_instances() must skip EasyQC wrappers whose C++ object has been deleted
+    (they pass isinstance but raise RuntimeError when probed)."""
+    live = EasyQC()
+    qtbot.addWidget(live)
+
+    # Mock(spec=EasyQC) passes isinstance(EasyQC); make its probe raise as a real
+    # deleted Qt wrapper would.
+    dead = Mock(spec=EasyQC)
+    dead.objectName.side_effect = RuntimeError(
+        "wrapped C/C++ object of type EasyQC has been deleted"
+    )
+    assert isinstance(dead, EasyQC)
+
+    fake_app = Mock()
+    fake_app.topLevelWidgets.return_value = [live, dead]
+    monkeypatch.setattr(QtWidgets.QApplication, "instance", lambda: fake_app)
+
+    instances = EasyQC._instances()
+    assert live in instances
+    assert dead not in instances
 
 
 def test_auto_downsample_true_by_default(view_with_data):

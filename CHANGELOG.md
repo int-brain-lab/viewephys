@@ -4,6 +4,7 @@
 
 ### fixed
 - ctrl+P propagation no longer detaches the top/side header axes: the header viewboxes are now linked *to* the seismic view instead of the reverse, freeing the seismic viewbox's single X/Y link slots for cross-window linking. Panning/zooming any linked window now keeps every window's main plot and header strips in sync
+- `EasyQC._instances()` now skips wrappers whose C++ object has been deleted, so window lookup and ctrl+P propagation no longer raise a `RuntimeError` when a stale window lingers
 
 ## [1.3.0] - 2026-07-07
 
