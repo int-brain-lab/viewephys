@@ -1,4 +1,7 @@
+from unittest.mock import Mock
+
 import numpy as np
+import pyqtgraph as pg
 import pytest
 from qtpy import QtCore, QtWidgets
 
@@ -547,6 +550,95 @@ def test_close_without_opening_file(qtbot, viewer_cls):
     window = viewer_cls()
     qtbot.addWidget(window)
     window.closeEvent(None)  # no self.viewers yet
+
+
+def _viewbox(plot_widget):
+    return plot_widget.getPlotItem().getViewBox()
+
+
+def test_header_axes_track_seismic(view_with_data, qtbot):
+    """The header viewboxes must follow the seismic view, while the seismic's
+    own X/Y link slots stay free for cross-window propagation (ctrl+P)."""
+    window = view_with_data
+    seis = _viewbox(window.plotItem_seismic)
+    header_h = _viewbox(window.plotItem_header_h)
+    header_v = _viewbox(window.plotItem_header_v)
+
+    # Headers link *to* the seismic; the seismic keeps both slots free so ctrl+P
+    # can link it to another window without detaching the headers.
+    assert header_h.linkedView(pg.ViewBox.XAxis) is seis
+    assert header_v.linkedView(pg.ViewBox.YAxis) is seis
+    assert seis.linkedView(pg.ViewBox.XAxis) is None
+    assert seis.linkedView(pg.ViewBox.YAxis) is None
+
+    # Panning/zooming the seismic must propagate to the top (x) header strip.
+    seis.setXRange(10, 20, padding=0)
+    qtbot.wait(20)
+    assert list(header_h.viewRange()[0]) == pytest.approx([10, 20])
+
+
+def test_propagate_link_keeps_headers_attached(qtbot, synthetic_seis):
+    """The cross-window link that ctrl+P applies (Controller.propagate) must link
+    a window's seismic to the master *and* keep that window's header tracking its
+    own seismic — regression for the single-slot link overwrite that detached
+    propagated windows' headers."""
+    data, header = synthetic_seis
+
+    def _make_view():
+        # Build directly rather than via viewseis(), which scans global instances.
+        w = EasyQC()
+        w.model.set_data(data, si=0.002, header=header)
+        w.ctrl.set_model()
+        qtbot.addWidget(w)
+        w.show()
+        return w
+
+    master = _make_view()
+    other = _make_view()
+    qtbot.wait(50)
+
+    s_master = _viewbox(master.plotItem_seismic)
+    s_other = _viewbox(other.plotItem_seismic)
+    h_other = _viewbox(other.plotItem_header_h)
+
+    # Mirror the link step propagate() performs on each non-master window.
+    other.plotItem_seismic.setXLink(master.plotItem_seismic)
+    other.plotItem_seismic.setYLink(master.plotItem_seismic)
+    qtbot.wait(20)
+
+    # other's seismic now follows the master, and its header still follows its own
+    # seismic (header -> seismic -> master-seismic all chained).
+    assert s_other.linkedView(pg.ViewBox.XAxis) is s_master
+    assert h_other.linkedView(pg.ViewBox.XAxis) is s_other
+
+    # Driving the master must move the other window's seismic *and* its header.
+    s_master.setXRange(5, 15, padding=0)
+    qtbot.wait(20)
+    assert list(s_other.viewRange()[0]) == pytest.approx([5, 15])
+    assert list(h_other.viewRange()[0]) == pytest.approx([5, 15])
+
+
+def test_instances_skips_deleted_wrappers(qtbot, monkeypatch):
+    """_instances() must skip EasyQC wrappers whose C++ object has been deleted
+    (they pass isinstance but raise RuntimeError when probed)."""
+    live = EasyQC()
+    qtbot.addWidget(live)
+
+    # Mock(spec=EasyQC) passes isinstance(EasyQC); make its probe raise as a real
+    # deleted Qt wrapper would.
+    dead = Mock(spec=EasyQC)
+    dead.objectName.side_effect = RuntimeError(
+        "wrapped C/C++ object of type EasyQC has been deleted"
+    )
+    assert isinstance(dead, EasyQC)
+
+    fake_app = Mock()
+    fake_app.topLevelWidgets.return_value = [live, dead]
+    monkeypatch.setattr(QtWidgets.QApplication, "instance", lambda: fake_app)
+
+    instances = EasyQC._instances()
+    assert live in instances
+    assert dead not in instances
 
 
 def test_auto_downsample_true_by_default(view_with_data):

@@ -108,7 +108,19 @@ class EasyQC(QtWidgets.QMainWindow):
         app = QtWidgets.QApplication.instance()
         if app is None:
             app = qt.create_app()
-        return [w for w in app.topLevelWidgets() if isinstance(w, EasyQC)]
+        instances = []
+        for w in app.topLevelWidgets():
+            if not isinstance(w, EasyQC):
+                continue
+            # A wrapper whose C++ object was deleted (e.g. via deleteLater) still
+            # passes isinstance but raises RuntimeError on any method call. Probe
+            # cheaply and skip such stale wrappers so callers never touch them.
+            try:
+                w.objectName()
+            except RuntimeError:
+                continue
+            instances.append(w)
+        return instances
 
     @staticmethod
     def _get_or_create(title=None):
@@ -160,12 +172,17 @@ class EasyQC(QtWidgets.QMainWindow):
         self._init_cmenu()
         self.plotDataItem_header_h = pg.PlotDataItem()
         self.plotItem_header_h.addItem(self.plotDataItem_header_h)
-        self.plotItem_seismic.setXLink(self.plotItem_header_h)
+        # Link the header viewboxes *to* the seismic (rather than the reverse) so
+        # the seismic viewbox's single X/Y link slots stay free for cross-window
+        # propagation (ctrl+P). Linking is bidirectional and chains transitively, so
+        # the headers still track the seismic, and header -> seismic -> master-seismic
+        # all stay in sync.
+        self.plotItem_header_h.setXLink(self.plotItem_seismic)
         self.plotDataItem_header_v = pg.PlotDataItem()
         self.plotItem_header_h.setBackground(background_color)
         self.plotItem_header_v.addItem(self.plotDataItem_header_v)
         self.plotItem_header_v.setBackground(background_color)
-        self.plotItem_seismic.setYLink(self.plotItem_header_v)
+        self.plotItem_header_v.setYLink(self.plotItem_seismic)
         ax = self.plotItem_seismic.getAxis("left")
         ax.setStyle(
             tickTextWidth=60, autoReduceTextSpace=False, autoExpandTextSpace=False
