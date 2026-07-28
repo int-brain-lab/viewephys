@@ -1,8 +1,13 @@
 import numpy as np
+import pytest
 import spikeinterface.core as si_core
 import spikeinterface.preprocessing as si_prepro
 
 from viewephys.gui import A_SCALAR, EphysBinViewer
+
+# The SpikeInterface recordings below are shifted onto a non-zero clock so the
+# tests exercise the sample<->time mapping (t0/labels), not just frame slicing.
+T_START = 40.0
 
 
 def test_spikeinterface_checkboxes_show_selected_recordings(qtbot):
@@ -15,6 +20,9 @@ def test_spikeinterface_checkboxes_show_selected_recordings(qtbot):
         seed=0,
     )
 
+    # Shift onto a non-zero clock (mimics an SI recording that does not start at 0).
+    raw.set_times(raw.get_times() + T_START)
+
     # Add preprocessing steps, preserving dict order as the expected UI order.
     bandpass = si_prepro.bandpass_filter(raw, freq_min=125.0, freq_max=3000)
     cmr = si_prepro.common_reference(bandpass, operator="median")
@@ -24,6 +32,7 @@ def test_spikeinterface_checkboxes_show_selected_recordings(qtbot):
     window = EphysBinViewer(recordings)
     window.window_length_n = 64
     window.update_slider_limits()
+    fs = window.data.get_sampling_frequency()
 
     # Check that dynamic checkboxes mirror the recording dict order and labels.
     assert list(window.cbs) == list(recordings)
@@ -46,7 +55,8 @@ def test_spikeinterface_checkboxes_show_selected_recordings(qtbot):
     assert list(window.viewers) == list(recordings)
     assert all(viewer is not None for viewer in window.viewers.values())
 
-    # Verify each spawned viewer displays the matching SpikeInterface trace slice.
+    # The window content is selected by sample index, so the frame slice is
+    # unaffected by the non-zero clock: each viewer shows the matching traces.
     for step, viewer in window.viewers.items():
         expected = (
             recordings[step].get_traces(
@@ -60,5 +70,13 @@ def test_spikeinterface_checkboxes_show_selected_recordings(qtbot):
         np.testing.assert_allclose(
             viewer.imageItem_seismic.image, expected, rtol=0, atol=1e-8
         )
+
+    # The non-zero SI clock must be honored for display: the sample<->time helper
+    # and every spawned viewer's time origin reflect the +T_START offset.
+    expected_t0 = first / fs + T_START
+    assert window.data.get_time_from_sample(first) == pytest.approx(expected_t0)
+    assert window.lineEdit_jumpTime.text() == f"{expected_t0:0.6f}"
+    for viewer in window.viewers.values():
+        assert viewer.model.t0 == pytest.approx(expected_t0)
 
     window.close()
