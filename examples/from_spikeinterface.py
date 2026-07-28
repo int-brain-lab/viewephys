@@ -14,6 +14,9 @@ raw, _sorting = si.generate_ground_truth_recording(
     num_units=10,
     seed=0,
 )
+
+raw.set_times(raw.get_times() + 40)
+
 highpass = spre.highpass_filter(raw, freq_min=300.0)
 
 viewer = EphysBinViewer(
