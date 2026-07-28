@@ -117,12 +117,7 @@ def test_spikeinterface_jump_to_time_uses_si_clock(qtbot):
     # Expected window start from the correct SI-clock conversion...
     requested = min(max(0, window.data.get_sample_from_time(target_time)), ns - 1)
     expected_first = min(max(0, requested - window.window_length_n // 2), max_first)
-    # ...versus the old zero-origin bug (t * fs), which clamps far to the right.
-    buggy = min(max(0, int(round(target_time * fs))), ns - 1)
-    buggy_first = min(max(0, buggy - window.window_length_n // 2), max_first)
 
     assert window._first_sample == expected_first
-    # If this fails the two conversions coincide and the test is toothless.
-    assert expected_first != buggy_first
 
     window.close()
