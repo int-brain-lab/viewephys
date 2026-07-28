@@ -8,6 +8,7 @@ from qtpy import QtCore, QtWidgets
 from viewephys.data_model import LFPackDataModel, SpikeGLXDataModel
 from viewephys.gui import (
     A_SCALAR,
+    SLIDER_MAX,
     EphysBinViewer,
     LFPackBinViewer,
     create_app,
@@ -230,14 +231,20 @@ def _centered_first_sample(typed_seconds, fs, ns, window_length_n):
     return max(0, min(first_sample, max_first))
 
 
+def _expected_slider(first_sample, ns, window_length_n):
+    """Return the expected proportional slider position for a first sample."""
+    max_first = max(0, int(ns) - window_length_n)
+    if max_first == 0:
+        return 0
+    return int(round(first_sample / max_first * SLIDER_MAX))
+
+
 @pytest.fixture
 def jump_window(qtbot, monkeypatch):
     window = EphysBinViewer()
     qtbot.addWidget(window)
     window.data = SpikeGLXDataModel(_FakeSR())
     window._setup_viewers_and_checkboxes()
-    slider_max = int(np.floor(window.data.get_num_samples() / window.window_length_n))
-    window.horizontalSlider.setMaximum(slider_max)
     window.horizontalSlider.setEnabled(True)
     window.lineEdit_jumpTime.setEnabled(True)
     monkeypatch.setattr(
@@ -257,19 +264,14 @@ def jump_window(qtbot, monkeypatch):
 )
 def test_jump_to_time_loads_exact_sample(jump_window, qtbot, typed_seconds):
     """Jump-to should center the window on the requested sample, while
-    parking the slider near the loaded window for visual feedback only."""
+    parking the slider proportionally for visual feedback only."""
     window = jump_window
     fs = window.data.get_sampling_frequency()
+    ns = window.data.get_num_samples()
     expected_first = _centered_first_sample(
-        typed_seconds, fs, window.data.get_num_samples(), window.window_length_n
+        typed_seconds, fs, ns, window.window_length_n
     )
-    expected_slider = max(
-        0,
-        min(
-            int(round(expected_first / window.window_length_n)),
-            window.horizontalSlider.maximum(),
-        ),
-    )
+    expected_slider = _expected_slider(expected_first, ns, window.window_length_n)
     expected_t = expected_first / fs
 
     window.lineEdit_jumpTime.setText(str(typed_seconds))
@@ -289,37 +291,29 @@ def test_jump_to_time_non_chunk_aligned(jump_window, qtbot):
     requested_sample = int(round(500.150 * window.data.get_sampling_frequency()))
     assert window._first_sample + window.window_length_n // 2 == requested_sample
     assert window._first_sample == 14_999_500
-    assert window.horizontalSlider.value() == 1500
+    assert window.horizontalSlider.value() == _expected_slider(
+        window._first_sample, window.data.get_num_samples(), window.window_length_n
+    )
     assert window.lineEdit_jumpTime.text() == "499.983333"
 
 
-def test_slider_drag_resets_first_sample_to_chunk(jump_window, qtbot):
-    """After a non-chunk-aligned jump, dragging the slider must snap
-    `_first_sample` back to the chunk boundary so subsequent loads use the
-    slider position."""
+def test_slider_drag_sets_proportional_first_sample(jump_window, qtbot):
+    """Dragging the slider maps its position proportionally onto the recording,
+    independently of the window size."""
     window = jump_window
-    window.lineEdit_jumpTime.setText("500.150")
-    qtbot.keyPress(window.lineEdit_jumpTime, QtCore.Qt.Key_Return)
-    assert window._first_sample == 14_999_500  # not chunk-aligned
+    max_first = max(0, int(window.data.get_num_samples()) - window.window_length_n)
 
-    window.horizontalSlider.setValue(1501)
-    assert window._first_sample == 1501 * window.window_length_n
+    window.horizontalSlider.setValue(SLIDER_MAX // 4)
+    expected_first = int(round((SLIDER_MAX // 4) / SLIDER_MAX * max_first))
+    assert window._first_sample == expected_first
     assert window.lineEdit_jumpTime.text() == (
-        f"{1501 * window.window_length_n / window.data.get_sampling_frequency():0.6f}"
+        f"{window.data.get_time_from_sample(expected_first):0.6f}"
     )
 
 
 def test_jump_to_time_clamps_out_of_range(jump_window, qtbot):
     window = jump_window
     max_first = max(0, int(window.data.get_num_samples()) - window.window_length_n)
-
-    expected_slider_high = max(
-        0,
-        min(
-            int(round(max_first / window.window_length_n)),
-            window.horizontalSlider.maximum(),
-        ),
-    )
 
     window.lineEdit_jumpTime.setText("-50")
     qtbot.keyPress(window.lineEdit_jumpTime, QtCore.Qt.Key_Return)
@@ -329,7 +323,7 @@ def test_jump_to_time_clamps_out_of_range(jump_window, qtbot):
     window.lineEdit_jumpTime.setText("99999")
     qtbot.keyPress(window.lineEdit_jumpTime, QtCore.Qt.Key_Return)
     assert window._first_sample == max_first
-    assert window.horizontalSlider.value() == expected_slider_high
+    assert window.horizontalSlider.value() == SLIDER_MAX
 
 
 def test_jump_to_time_ignores_garbage(jump_window, qtbot):
@@ -350,9 +344,6 @@ def test_jump_to_time_recenters_existing_zoom(qtbot, monkeypatch):
     qtbot.addWidget(window)
     window.data = SpikeGLXDataModel(_FakeArraySR())
     window._setup_viewers_and_checkboxes()
-    window.horizontalSlider.setMaximum(
-        int(np.floor(window.data.get_num_samples() / window.window_length_n))
-    )
     for checkbox in window.cbs.values():
         checkbox.setChecked(False)
     window.cbs["raw"].setChecked(True)
@@ -439,14 +430,14 @@ def test_window_size_change_displays_different_data(qtbot):
     )
     assert window.viewers["raw"].imageItem_seismic.image.shape[0] == n1 != n0
 
-    # Move the slider to start one second (fs samples) into the recording and
-    # check the raw viewer now shows that later chunk.
+    # Move the slider to start ~one second into the recording and check the raw
+    # viewer shows the corresponding chunk (proportional mapping, so read back
+    # the resolved first sample rather than assuming an exact value).
     fs = window.data.get_sampling_frequency()
-    slider_value = int(fs // n1)
-    window.horizontalSlider.setValue(slider_value)
+    window.horizontalSlider.setValue(window._first_sample_to_slider(int(fs)))
     window.on_horizontalSliderReleased()
-    first = int(fs)
-    assert window._first_sample == first
+    first = window._first_sample
+    assert first > 0
     expected_moved = window.data.get_data(first, first + n1, "raw").T * A_SCALAR
     np.testing.assert_array_equal(
         window.viewers["raw"].imageItem_seismic.image, expected_moved

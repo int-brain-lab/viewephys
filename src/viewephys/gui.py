@@ -29,6 +29,11 @@ T_SCALAR = 1  # defaults s for user side
 A_SCALAR = 1e6  # defaults V for user side
 N_SAMPLES_INIT = 2000  # number of samples in the manual pick array
 
+# Fixed integer resolution of the navigation slider. The slider position is a
+# proportion of this constant and is mapped onto the recording independently of
+# the window size, so slider granularity never changes when the window resizes.
+SLIDER_MAX = 65535
+
 PICK_COLOR = (0, 255, 255)
 
 SNS_PALETTE = [
@@ -71,6 +76,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.actionopen.triggered.connect(self.open_file)
         self.actionopen_live_recording.triggered.connect(self.open_file_live)
         self.horizontalSlider.setMinimum(0)
+        self.horizontalSlider.setMaximum(SLIDER_MAX)
         self.horizontalSlider.setSingleStep(1)
         self.horizontalSlider.setTickInterval(10)
         self._first_sample = 0
@@ -165,20 +171,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.data = SpikeGLXDataModel(sr)
 
     def _setup_slider(self):
-        num_samples = self.data.get_num_samples()
-
-        # enable and set slider, based on the number of samples in the entire file
-        n_chunks = int(np.floor(num_samples / self.window_length_n))
-        self.horizontalSlider.setMaximum(n_chunks)
-        tmax = self.data.get_time_from_sample(n_chunks * self.window_length_n)
-        self.label_smax.setText(f"{tmax:0.2f}s")
-
         tlabel = self._create_top_label()
         self.update_slider_limits()
 
         self.label.setText(tlabel)
 
+        self.horizontalSlider.blockSignals(True)
         self.horizontalSlider.setValue(0)
+        self.horizontalSlider.blockSignals(False)
         self._first_sample = 0
         self.horizontalSlider.setEnabled(True)
         self.lineEdit_jumpTime.setEnabled(True)
@@ -248,7 +248,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         return tlabel
 
     def on_horizontalSliderValueChanged(self) -> None:
-        self._first_sample = int(self.horizontalSlider.value()) * self.window_length_n
+        self._first_sample = self._slider_to_first_sample(
+            int(self.horizontalSlider.value())
+        )
         self._update_time_label()
 
     def on_lineEdit_windowSizeChanged(self) -> None:
@@ -263,7 +265,12 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         )
         self.update_slider_limits()
         self.update_window_lineedit()
-        self.on_horizontalSliderValueChanged()
+        # Keep the current position; clamp it into the new range and sync the thumb.
+        self._first_sample = min(self._first_sample, self._max_first_sample())
+        self.horizontalSlider.blockSignals(True)
+        self.horizontalSlider.setValue(self._first_sample_to_slider(self._first_sample))
+        self.horizontalSlider.blockSignals(False)
+        self._update_time_label()
         self.on_horizontalSliderReleased()
 
     def update_window_lineedit(self) -> None:
@@ -275,14 +282,42 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         )
 
     def update_slider_limits(self) -> None:
-        """Recompute the slider maximum and tmax label from window_length_n."""
+        """Refresh the page step and tmax label from window_length_n.
+
+        The slider range is a fixed ``[0, SLIDER_MAX]`` independent of the window
+        size; only the page/single step (roughly one window worth) and the
+        end-time label depend on the current window and recording.
+        """
         if not hasattr(self, "data"):
             return
         num_samples = self.data.get_num_samples()
-        n_chunks = int(np.floor(num_samples / self.window_length_n))
-        self.horizontalSlider.setMaximum(n_chunks)
-        tmax = self.data.get_time_from_sample(n_chunks * self.window_length_n)
+        max_first = self._max_first_sample()
+        if max_first > 0:
+            page_step = max(1, int(SLIDER_MAX * self.window_length_n / max_first))
+        else:
+            page_step = SLIDER_MAX
+        self.horizontalSlider.setPageStep(page_step)
+        self.horizontalSlider.setSingleStep(max(1, page_step // 10))
+        tmax = self.data.get_time_from_sample(num_samples - 1)
         self.label_smax.setText(f"{tmax:0.2f}s")
+
+    def _max_first_sample(self) -> int:
+        """Largest first-sample index that still fits a full window (>= 0)."""
+        return max(0, int(self.data.get_num_samples()) - self.window_length_n)
+
+    def _slider_to_first_sample(self, value: int) -> int:
+        """Map a slider position in ``[0, SLIDER_MAX]`` to a first-sample index."""
+        max_first = self._max_first_sample()
+        if max_first == 0:
+            return 0
+        return int(round(value / SLIDER_MAX * max_first))
+
+    def _first_sample_to_slider(self, first_sample: int) -> int:
+        """Map a first-sample index to a slider position in ``[0, SLIDER_MAX]``."""
+        max_first = self._max_first_sample()
+        if max_first == 0:
+            return 0
+        return int(round(first_sample / max_first * SLIDER_MAX))
 
     def _update_time_label(self) -> None:
         if not hasattr(self, "data"):
@@ -321,8 +356,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         first_sample = max(0, min(first_sample, max_first))
         center_time = self.data.get_time_from_sample(requested_sample)
         self._first_sample = first_sample
-        slider_value = int(round(first_sample / self.window_length_n))
-        slider_value = max(0, min(slider_value, self.horizontalSlider.maximum()))
+        slider_value = self._first_sample_to_slider(first_sample)
         # Move slider for visual feedback without letting valueChanged
         # overwrite the exact first_sample we just set.
         self.horizontalSlider.blockSignals(True)
@@ -517,14 +551,9 @@ class LFPackBinViewer(EphysBinViewer):
 
         # Refresh slider bounds and clamp position into range; keep window and zoom.
         self.update_slider_limits()
-        max_first = max(0, self.data.get_num_samples() - self.window_length_n)
-        self._first_sample = min(self._first_sample, max_first)
-        slider_value = min(
-            int(round(self._first_sample / self.window_length_n)),
-            self.horizontalSlider.maximum(),
-        )
+        self._first_sample = min(self._first_sample, self._max_first_sample())
         self.horizontalSlider.blockSignals(True)
-        self.horizontalSlider.setValue(slider_value)
+        self.horizontalSlider.setValue(self._first_sample_to_slider(self._first_sample))
         self.horizontalSlider.blockSignals(False)
         self._update_time_label()
         self.on_horizontalSliderReleased()
