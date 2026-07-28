@@ -317,10 +317,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if t is None:
             return
 
-        sampling_frequency = self.data.get_sampling_frequency()
         num_samples = self.data.get_num_samples()
 
-        requested_sample = int(round(t * sampling_frequency))
+        requested_sample = self.data.get_sample_from_time(t)
         requested_sample = max(0, min(requested_sample, int(num_samples) - 1))
         max_first = max(0, int(num_samples) - self.window_length_n)
         first_sample = requested_sample - self.window_length_n // 2
