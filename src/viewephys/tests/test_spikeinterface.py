@@ -80,3 +80,49 @@ def test_spikeinterface_checkboxes_show_selected_recordings(qtbot):
         assert viewer.model.t0 == pytest.approx(expected_t0)
 
     window.close()
+
+
+def test_spikeinterface_jump_to_time_uses_si_clock(qtbot):
+    """Jumping to a typed time must convert through the SI clock.
+
+    With a non-zero start time, ``get_sample_from_time`` and the old zero-origin
+    ``t * fs`` conversion land on very different samples, so this guards against
+    the jump handler regressing to plain ``t * fs``.
+    """
+    fs = 30_000.0
+    raw = si_core.generate_recording(
+        num_channels=4,
+        sampling_frequency=fs,
+        durations=[0.2],
+        set_probe=False,
+        seed=0,
+    )
+    raw.set_times(raw.get_times() + T_START)
+
+    window = EphysBinViewer({"raw": raw})
+    window.window_length_n = 64
+    window.update_slider_limits()
+    # Do not spawn viewer windows; we only assert the navigation maths.
+    for checkbox in window.cbs.values():
+        checkbox.setChecked(False)
+
+    ns = raw.get_num_samples()
+    max_first = max(0, ns - window.window_length_n)
+
+    # Jump 0.05 s into the recording on the SI clock (i.e. T_START + 0.05 s).
+    target_time = T_START + 0.05
+    window.lineEdit_jumpTime.setText(f"{target_time:.6f}")
+    window.on_jumpToTimeRequested()
+
+    # Expected window start from the correct SI-clock conversion...
+    requested = min(max(0, window.data.get_sample_from_time(target_time)), ns - 1)
+    expected_first = min(max(0, requested - window.window_length_n // 2), max_first)
+    # ...versus the old zero-origin bug (t * fs), which clamps far to the right.
+    buggy = min(max(0, int(round(target_time * fs))), ns - 1)
+    buggy_first = min(max(0, buggy - window.window_length_n // 2), max_first)
+
+    assert window._first_sample == expected_first
+    # If this fails the two conversions coincide and the test is toothless.
+    assert expected_first != buggy_first
+
+    window.close()
