@@ -3,7 +3,7 @@ import pytest
 import spikeinterface.core as si_core
 import spikeinterface.preprocessing as si_prepro
 
-from viewephys.gui import A_SCALAR, EphysBinViewer
+from viewephys.gui import A_SCALAR, SLIDER_MAXVAL, EphysBinViewer
 
 # The SpikeInterface recordings below are shifted onto a non-zero clock so the
 # tests exercise the sample<->time mapping (t0/labels), not just frame slicing.
@@ -56,10 +56,11 @@ def test_spikeinterface_checkboxes_show_selected_recordings(qtbot):
     for checkbox in window.cbs.values():
         checkbox.setChecked(True)
 
-    window.horizontalSlider.setValue(1)
+    slider_val = 45000
+    window.horizontalSlider.setValue(slider_val)
     window.on_horizontalSliderReleased()
 
-    first = window.window_length_n
+    first = round(slider_val / SLIDER_MAXVAL * window.data.get_num_samples())
     last = first + window.window_length_n
     assert list(window.viewers) == list(recordings)
     assert all(viewer is not None for viewer in window.viewers.values())
