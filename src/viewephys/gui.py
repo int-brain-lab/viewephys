@@ -44,7 +44,7 @@ SNS_PALETTE = [
     (0.09019607843137255, 0.7450980392156863, 0.8117647058823529),
 ]
 
-SLIDER_MAXVAL = 2**16 - 1  # TODO: CHECK
+SLIDER_MAXVAL = 2**31 - 1
 
 
 class EphysBinViewer(QtWidgets.QMainWindow):
@@ -241,14 +241,24 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
     def on_horizontalSliderValueChanged(self) -> None:
         value = self.horizontalSlider.value()
-        slider_max = self.horizontalSlider.maximum()
-        self._first_sample = min(
-            self.data.get_num_samples() - self.window_length_n,
-            int(value / SLIDER_MAXVAL * self.data.get_num_samples()),
-        )  # int(self.horizontalSlider.value()) * self.window_length_n
-        print("value", value)
-        print("slider_max", slider_max)
-        print("first sample", self._first_sample)
+        num_samples = self.data.get_num_samples()
+
+        max_sample = num_samples - self.window_length_n
+        current_sample = int(value / SLIDER_MAXVAL * self.data.get_num_samples())
+
+        if max_sample < current_sample:
+            # Don't allow the slider to go to the end as we must account for the
+            # window size (slider value sets the first sample)
+            self._first_sample = max_sample
+            capped_value = round(
+                SLIDER_MAXVAL * ((num_samples - self.window_length_n) / num_samples)
+            )
+            self.horizontalSlider.blockSignals(True)
+            self.horizontalSlider.setValue(capped_value)
+            self.horizontalSlider.blockSignals(False)
+        else:
+            self._first_sample = current_sample
+
         self._update_time_label()
 
     def on_lineEdit_windowSizeChanged(self) -> None:
