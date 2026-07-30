@@ -93,8 +93,6 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.lineEdit_windowSize.returnPressed.connect(
             self.on_lineEdit_windowSizeChanged
         )
-        self.label_smin.setText("0")
-
         self._update_time_label()
         self.show()
 
@@ -165,20 +163,6 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.data = SpikeGLXDataModel(sr)
 
     def _setup_slider(self):
-        num_samples = self.data.get_num_samples()
-        sampling_frequency = self.data.get_sampling_frequency()
-
-        # enable and set slider, based on the number of samples in the entire file
-        self.horizontalSlider.setMaximum(
-            int(np.floor(num_samples / self.window_length_n))
-        )
-        tmax = (
-            np.floor(num_samples / self.window_length_n)
-            * self.window_length_n
-            / sampling_frequency
-        )
-        self.label_smax.setText(f"{tmax:0.2f}s")
-
         tlabel = self._create_top_label()
         self.update_slider_limits()
 
@@ -289,6 +273,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.horizontalSlider.setMaximum(n_chunks)
         tmax = self.data.get_time_from_sample(num_samples - 1)
         self.label_smax.setText(f"{tmax:0.2f}s")
+        tmin = self.data.get_time_from_sample(0)
+        self.label_smin.setText(f"{tmin:0.2f}s")
 
     def _update_time_label(self) -> None:
         if not hasattr(self, "data"):

@@ -34,6 +34,15 @@ def test_spikeinterface_checkboxes_show_selected_recordings(qtbot):
     window.update_slider_limits()
     fs = window.data.get_sampling_frequency()
 
+    # The slider min/max labels report the absolute start/end time on the SI
+    # clock, so they must reflect the +T_START offset (not the zero-origin
+    # sample/fs values).
+    expected_tmin = window.data.get_time_from_sample(0)
+    expected_tmax = window.data.get_time_from_sample(window.data.get_num_samples() - 1)
+    assert expected_tmin == pytest.approx(T_START)
+    assert window.label_smin.text() == f"{expected_tmin:0.2f}s"
+    assert window.label_smax.text() == f"{expected_tmax:0.2f}s"
+
     # Check that dynamic checkboxes mirror the recording dict order and labels.
     assert list(window.cbs) == list(recordings)
     assert [checkbox.text() for checkbox in window.cbs.values()] == list(recordings)
