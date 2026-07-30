@@ -165,7 +165,6 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.data = SpikeGLXDataModel(sr)
 
     def _setup_slider(self):
-
         tlabel = self._create_top_label()
         self.update_slider_limits()
 
