@@ -44,6 +44,8 @@ SNS_PALETTE = [
     (0.09019607843137255, 0.7450980392156863, 0.8117647058823529),
 ]
 
+SLIDER_MAXVAL = 2**16 - 1  # TODO: CHECK
+
 
 class EphysBinViewer(QtWidgets.QMainWindow):
     def __init__(
@@ -163,6 +165,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.data = SpikeGLXDataModel(sr)
 
     def _setup_slider(self):
+
         tlabel = self._create_top_label()
         self.update_slider_limits()
 
@@ -238,7 +241,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         return tlabel
 
     def on_horizontalSliderValueChanged(self) -> None:
-        self._first_sample = int(self.horizontalSlider.value()) * self.window_length_n
+        value = self.horizontalSlider.value()
+        slider_max = self.horizontalSlider.maximum()
+        self._first_sample = min(
+            self.data.get_num_samples() - self.window_length_n,
+            int(value / SLIDER_MAXVAL * self.data.get_num_samples()),
+        )  # int(self.horizontalSlider.value()) * self.window_length_n
+        print("value", value)
+        print("slider_max", slider_max)
+        print("first sample", self._first_sample)
         self._update_time_label()
 
     def on_lineEdit_windowSizeChanged(self) -> None:
@@ -261,7 +272,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if not hasattr(self, "data"):
             return
         self.lineEdit_windowSize.setText(
-            f"{self.window_length_n / self.data.get_sampling_frequency():0.2f}"
+            f"{self.window_length_n / self.data.get_sampling_frequency():0.3f}"
         )
 
     def update_slider_limits(self) -> None:
@@ -269,8 +280,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if not hasattr(self, "data"):
             return
         num_samples = self.data.get_num_samples()
-        n_chunks = int(np.floor(num_samples / self.window_length_n))
-        self.horizontalSlider.setMaximum(n_chunks)
+        # n_chunks = int(np.floor(num_samples / self.window_length_n))
+        self.horizontalSlider.setMaximum(SLIDER_MAXVAL)
         tmax = self.data.get_time_from_sample(num_samples - 1)
         self.label_smax.setText(f"{tmax:0.2f}s")
         tmin = self.data.get_time_from_sample(0)
@@ -281,7 +292,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             self.lineEdit_jumpTime.setText("0.000000")
             return
         tcur = self.data.get_time_from_sample(self._first_sample)
-        self.lineEdit_jumpTime.setText(f"{tcur:0.6f}")
+        self.lineEdit_jumpTime.setText(f"{tcur:0.3f}")
 
     def _get_float_from_lineedit(self, lineedit: QtWidgets.QLineEdit):
         text = lineedit.text().strip()
