@@ -211,7 +211,6 @@ class RasterView(QtWidgets.QMainWindow):
             br=self.data.br,
             title="butt",
             t0=t0,
-            t_scalar=1,
         )
         self.eqc_des = viewephys(
             destripe,
@@ -220,7 +219,6 @@ class RasterView(QtWidgets.QMainWindow):
             br=self.data.br,
             title="destripe",
             t0=t0,
-            t_scalar=1,
         )
         eqc_xrange = [t0 + tlen / 2 - 0.01, t0 + tlen / 2 + 0.01]
         self.eqc_des.viewBox_seismic.setXRange(*eqc_xrange)

@@ -25,9 +25,7 @@ from viewephys.data_model import (
 from viewephys.viewer.gui import EasyQC
 from viewephys.viewer.qt import create_app
 
-T_SCALAR = 1  # defaults s for user side
 A_SCALAR = 1e6  # defaults V for user side
-N_SAMPLES_INIT = 2000  # number of samples in the manual pick array
 
 PICK_COLOR = (0, 255, 255)
 
@@ -390,8 +388,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 channels=self.data.get_header(),
                 br=self.data.get_brain_regions(),
                 title=k,
-                t0=t0 * T_SCALAR,
-                t_scalar=T_SCALAR,
+                t0=t0,
                 a_scalar=A_SCALAR,
             )
             if isinstance(self.data, SpikeInterfaceDataModel):
@@ -410,10 +407,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 xr_prev, yr_prev = prev
                 width = xr_prev[1] - xr_prev[0]
                 xmin, xmax = viewer.ctrl.limits()[0]
-                if center_time is None:
-                    new_x0 = t0 * T_SCALAR
-                else:
-                    new_x0 = center_time * T_SCALAR - width / 2
+
+                new_x0 = t0 if center_time is None else center_time - width / 2
 
                 # Preserve the previous zoom width without panning past the data.
                 if width >= xmax - xmin:
@@ -645,10 +640,6 @@ class EphysViewer(EasyQC):
         self.action_pick.setCheckable(True)
         self.menupick.addAction(self.action_pick)
         self.action_pick.triggered.connect(self.menu_pick_callback)
-        # menu channels
-        self.action_label_channels = QtWidgets.QAction("Label channels", self)
-        self.action_label_channels.setCheckable(True)
-        self.menupick.addAction(self.action_label_channels)
         # finish init
         self.show()
 
@@ -681,7 +672,7 @@ class EphysViewer(EasyQC):
         :return:
         """
         y = np.tile(np.array([0, 1, np.nan]), times.size)
-        x = np.tile(times[:, np.newaxis] * T_SCALAR, 3).flatten()
+        x = np.tile(times[:, np.newaxis], 3).flatten()
         self.add_header_curve(x, y, name)
 
     def add_header_curve(self, x: np.ndarray, y: np.ndarray, name: str) -> None:
@@ -830,7 +821,6 @@ def viewephys(
     br=None,
     title: str = "ephys",
     t0: float = 0.0,
-    t_scalar: float = T_SCALAR,
     a_scalar: float = A_SCALAR,
     colormap: str | pg.ColorMap | matplotlib.colors.Colormap | None = None,
 ) -> EphysViewer:
