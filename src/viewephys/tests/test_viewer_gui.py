@@ -8,6 +8,7 @@ from qtpy import QtCore, QtWidgets
 from viewephys.data_model import LFPackDataModel, SpikeGLXDataModel
 from viewephys.gui import (
     A_SCALAR,
+    SLIDER_MAXVAL,
     EphysBinViewer,
     LFPackBinViewer,
     create_app,
@@ -303,9 +304,11 @@ def test_slider_drag_resets_first_sample_to_chunk(jump_window, qtbot):
     assert window._first_sample == 14_999_500  # not chunk-aligned
 
     window.horizontalSlider.setValue(1501)
-    assert window._first_sample == 1501 * window.window_length_n
+    assert window._first_sample == round(
+        (1501 / SLIDER_MAXVAL) * window.data.get_num_samples()
+    )
     assert window.lineEdit_jumpTime.text() == (
-        f"{1501 * window.window_length_n / window.data.get_sampling_frequency():0.6f}"
+        f"{window.data.get_time_from_sample(window._first_sample):0.6f}"
     )
 
 
@@ -442,7 +445,7 @@ def test_window_size_change_displays_different_data(qtbot):
     # Move the slider to start one second (fs samples) into the recording and
     # check the raw viewer now shows that later chunk.
     fs = window.data.get_sampling_frequency()
-    slider_value = int(fs // n1)
+    slider_value = round(fs / window.data.get_num_samples() * SLIDER_MAXVAL)
     window.horizontalSlider.setValue(slider_value)
     window.on_horizontalSliderReleased()
     first = int(fs)

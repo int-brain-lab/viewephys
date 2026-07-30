@@ -44,6 +44,8 @@ SNS_PALETTE = [
     (0.09019607843137255, 0.7450980392156863, 0.8117647058823529),
 ]
 
+SLIDER_MAXVAL = 2**31 - 1
+
 
 class EphysBinViewer(QtWidgets.QMainWindow):
     def __init__(
@@ -238,7 +240,25 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         return tlabel
 
     def on_horizontalSliderValueChanged(self) -> None:
-        self._first_sample = int(self.horizontalSlider.value()) * self.window_length_n
+        value = self.horizontalSlider.value()
+        num_samples = self.data.get_num_samples()
+
+        max_sample = num_samples - self.window_length_n
+        current_sample = round(value / SLIDER_MAXVAL * num_samples)
+
+        if max_sample < current_sample:
+            # Don't allow the slider to go to the end as we must account for the
+            # window size (slider value sets the first sample)
+            self._first_sample = max_sample
+            capped_value = round(
+                SLIDER_MAXVAL * ((num_samples - self.window_length_n) / num_samples)
+            )
+            self.horizontalSlider.blockSignals(True)
+            self.horizontalSlider.setValue(capped_value)
+            self.horizontalSlider.blockSignals(False)
+        else:
+            self._first_sample = current_sample
+
         self._update_time_label()
 
     def on_lineEdit_windowSizeChanged(self) -> None:
@@ -261,7 +281,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if not hasattr(self, "data"):
             return
         self.lineEdit_windowSize.setText(
-            f"{self.window_length_n / self.data.get_sampling_frequency():0.2f}"
+            f"{self.window_length_n / self.data.get_sampling_frequency():0.6f}"
         )
 
     def update_slider_limits(self) -> None:
@@ -269,8 +289,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if not hasattr(self, "data"):
             return
         num_samples = self.data.get_num_samples()
-        n_chunks = int(np.floor(num_samples / self.window_length_n))
-        self.horizontalSlider.setMaximum(n_chunks)
+        # n_chunks = int(np.floor(num_samples / self.window_length_n))
+        self.horizontalSlider.setMaximum(SLIDER_MAXVAL)
         tmax = self.data.get_time_from_sample(num_samples - 1)
         self.label_smax.setText(f"{tmax:0.2f}s")
         tmin = self.data.get_time_from_sample(0)
