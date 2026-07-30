@@ -244,7 +244,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         num_samples = self.data.get_num_samples()
 
         max_sample = num_samples - self.window_length_n
-        current_sample = int(value / SLIDER_MAXVAL * self.data.get_num_samples())
+        current_sample = round(value / SLIDER_MAXVAL * num_samples)
 
         if max_sample < current_sample:
             # Don't allow the slider to go to the end as we must account for the
@@ -281,7 +281,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if not hasattr(self, "data"):
             return
         self.lineEdit_windowSize.setText(
-            f"{self.window_length_n / self.data.get_sampling_frequency():0.3f}"
+            f"{self.window_length_n / self.data.get_sampling_frequency():0.6f}"
         )
 
     def update_slider_limits(self) -> None:
@@ -301,7 +301,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             self.lineEdit_jumpTime.setText("0.000000")
             return
         tcur = self.data.get_time_from_sample(self._first_sample)
-        self.lineEdit_jumpTime.setText(f"{tcur:0.3f}")
+        self.lineEdit_jumpTime.setText(f"{tcur:0.6f}")
 
     def _get_float_from_lineedit(self, lineedit: QtWidgets.QLineEdit):
         text = lineedit.text().strip()
