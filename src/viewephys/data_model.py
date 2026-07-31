@@ -28,12 +28,6 @@ class AbstractDataModel(abc.ABC):
     def get_sampling_frequency(self) -> float: ...
 
     @abc.abstractmethod
-    def get_time_from_sample(self, sample: int) -> float: ...
-
-    @abc.abstractmethod
-    def get_sample_from_time(self, time: float) -> int: ...
-
-    @abc.abstractmethod
     def get_recording_length(self) -> float: ...
 
     @abc.abstractmethod
@@ -61,6 +55,24 @@ class AbstractDataModel(abc.ABC):
         per-channel ``atlas_id`` in their header override this.
         """
         return None
+
+    def get_t0(self) -> float:
+        """Time in seconds of sample 0, i.e. the recording's clock origin.
+
+        Defaults to zero; backends whose clock does not start at zero
+        (e.g. a SpikeInterface recording shifted with ``set_times``) override
+        this. Sampling is assumed linear from this origin: drift within the
+        recording is not modeled.
+        """
+        return 0.0
+
+    def get_time_from_sample(self, sample: int) -> float:
+        """Time in seconds of a sample index, assuming a linear clock."""
+        return self.get_t0() + sample / self.get_sampling_frequency()
+
+    def get_sample_from_time(self, time: float) -> int:
+        """Sample index of a time in seconds, assuming a linear clock."""
+        return int(round((time - self.get_t0()) * self.get_sampling_frequency()))
 
 
 class SpikeGLXDataModel(AbstractDataModel):
@@ -169,16 +181,6 @@ class SpikeGLXDataModel(AbstractDataModel):
     def get_sampling_frequency(self) -> float:
         """Sampling frequency (Hz) of the recording."""
         return self.sr.fs
-
-    @override
-    def get_time_from_sample(self, sample: int) -> float:
-        """Time in seconds of a sample index (zero-origin regular clock)."""
-        return sample / self.sr.fs
-
-    @override
-    def get_sample_from_time(self, time: float) -> int:
-        """Sample index of a time in seconds (zero-origin regular clock)."""
-        return int(round(time * self.sr.fs))
 
     @override
     def get_recording_length(self) -> float:
@@ -429,14 +431,9 @@ class SpikeInterfaceDataModel(AbstractDataModel):
         return self.first_recording.get_sampling_frequency()
 
     @override
-    def get_time_from_sample(self, sample: int) -> float:
-        """Time in seconds of a sample index"""
-        return self.first_recording.sample_index_to_time(sample, segment_index=0)
-
-    @override
-    def get_sample_from_time(self, time: float) -> int:
-        """Sample index of a time in seconds"""
-        return self.first_recording.time_to_sample_index(time, segment_index=0)
+    def get_t0(self) -> float:
+        """Time in seconds of sample 0 on the SpikeInterface recording's clock."""
+        return self.first_recording.sample_index_to_time(0, segment_index=0)
 
     @override
     def get_recording_length(self) -> float:
