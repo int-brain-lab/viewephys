@@ -510,3 +510,55 @@ class TestSpikeInterfaceDataModel:
         assert model.get_sampling_frequency() == 1000.0
         assert model.get_t0() == 2.5
         assert model.get_time_from_sample(0) == 2.5
+
+    def test_non_uniform_clock_honored_without_override(self):
+        """A genuinely non-uniform ``set_times()`` vector is not linearized.
+
+        Without a user override, sample/time conversion must defer exactly to
+        SpikeInterface's own ``sample_index_to_time``/``time_to_sample_index``,
+        not a ``t0 + sample/fs`` approximation, so a recording with real
+        per-sample drift correction still displays its true times.
+        """
+        rec = si_core.generate_recording(
+            num_channels=4,
+            sampling_frequency=1000.0,
+            durations=[0.1],
+            set_probe=False,
+            seed=0,
+        )
+        # A deliberately non-uniform time vector: constant shift plus a
+        # per-sample ramp, so linear extrapolation from t0 alone would miss.
+        n = rec.get_num_samples()
+        non_uniform_times = np.arange(n) / 1000.0 + 40.0 + np.linspace(0, 0.01, n)
+        rec.set_times(non_uniform_times)
+
+        model = SpikeInterfaceDataModel({"raw": rec})
+
+        for sample in (0, 10, n - 1):
+            assert model.get_time_from_sample(sample) == pytest.approx(
+                rec.sample_index_to_time(sample, segment_index=0)
+            )
+            # The naive linear model would disagree once the ramp accumulates.
+            linear_guess = model.get_t0() + sample / model.get_sampling_frequency()
+            if sample > 0:
+                assert model.get_time_from_sample(sample) != pytest.approx(linear_guess)
+
+        query_time = float(non_uniform_times[50])
+        assert model.get_sample_from_time(query_time) == rec.time_to_sample_index(
+            query_time, segment_index=0
+        )
+
+    def test_fs_t0_override_bypasses_non_uniform_clock(self):
+        """An explicit override forces the linear model even over a real time vector."""
+        rec = si_core.generate_recording(
+            num_channels=4,
+            sampling_frequency=1000.0,
+            durations=[0.1],
+            set_probe=False,
+            seed=0,
+        )
+        n = rec.get_num_samples()
+        rec.set_times(np.arange(n) / 1000.0 + 40.0 + np.linspace(0, 0.01, n))
+
+        model = SpikeInterfaceDataModel({"raw": rec}, fs=2000.0, t0=0.0)
+        assert model.get_time_from_sample(10) == pytest.approx(10 / 2000.0)
