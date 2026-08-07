@@ -56,6 +56,24 @@ class AbstractDataModel(abc.ABC):
         """
         return None
 
+    def get_t0(self) -> float:
+        """Time in seconds of sample 0, i.e. the recording's clock origin.
+
+        Defaults to zero; backends whose clock does not start at zero
+        (e.g. a SpikeInterface recording shifted with ``set_times``) override
+        this. Sampling is assumed linear from this origin: drift within the
+        recording is not modeled.
+        """
+        return 0.0
+
+    def get_time_from_sample(self, sample: int) -> float:
+        """Time in seconds of a sample index, assuming a linear clock."""
+        return self.get_t0() + sample / self.get_sampling_frequency()
+
+    def get_sample_from_time(self, time: float) -> int:
+        """Sample index of a time in seconds, assuming a linear clock."""
+        return int(round((time - self.get_t0()) * self.get_sampling_frequency()))
+
 
 class SpikeGLXDataModel(AbstractDataModel):
     """Data model wrapping ``spikeglx.Reader``."""
@@ -411,6 +429,11 @@ class SpikeInterfaceDataModel(AbstractDataModel):
     @override
     def get_sampling_frequency(self) -> float:
         return self.first_recording.get_sampling_frequency()
+
+    @override
+    def get_t0(self) -> float:
+        """Time in seconds of sample 0 on the SpikeInterface recording's clock."""
+        return self.first_recording.sample_index_to_time(0, segment_index=0)
 
     @override
     def get_recording_length(self) -> float:

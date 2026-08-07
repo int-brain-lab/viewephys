@@ -93,8 +93,6 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.lineEdit_windowSize.returnPressed.connect(
             self.on_lineEdit_windowSizeChanged
         )
-        self.label_smin.setText("0")
-
         self._update_time_label()
         self.show()
 
@@ -165,20 +163,6 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.data = SpikeGLXDataModel(sr)
 
     def _setup_slider(self):
-        num_samples = self.data.get_num_samples()
-        sampling_frequency = self.data.get_sampling_frequency()
-
-        # enable and set slider, based on the number of samples in the entire file
-        self.horizontalSlider.setMaximum(
-            int(np.floor(num_samples / self.window_length_n))
-        )
-        tmax = (
-            np.floor(num_samples / self.window_length_n)
-            * self.window_length_n
-            / sampling_frequency
-        )
-        self.label_smax.setText(f"{tmax:0.2f}s")
-
         tlabel = self._create_top_label()
         self.update_slider_limits()
 
@@ -285,17 +269,18 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if not hasattr(self, "data"):
             return
         num_samples = self.data.get_num_samples()
-        sampling_frequency = self.data.get_sampling_frequency()
         n_chunks = int(np.floor(num_samples / self.window_length_n))
         self.horizontalSlider.setMaximum(n_chunks)
-        tmax = n_chunks * self.window_length_n / sampling_frequency
+        tmax = self.data.get_time_from_sample(num_samples - 1)
         self.label_smax.setText(f"{tmax:0.2f}s")
+        tmin = self.data.get_time_from_sample(0)
+        self.label_smin.setText(f"{tmin:0.2f}s")
 
     def _update_time_label(self) -> None:
         if not hasattr(self, "data"):
             self.lineEdit_jumpTime.setText("0.000000")
             return
-        tcur = self._first_sample / self.data.get_sampling_frequency()
+        tcur = self.data.get_time_from_sample(self._first_sample)
         self.lineEdit_jumpTime.setText(f"{tcur:0.6f}")
 
     def _get_float_from_lineedit(self, lineedit: QtWidgets.QLineEdit):
@@ -318,16 +303,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if t is None:
             return
 
-        sampling_frequency = self.data.get_sampling_frequency()
         num_samples = self.data.get_num_samples()
 
-        requested_sample = int(round(t * sampling_frequency))
+        requested_sample = self.data.get_sample_from_time(t)
         requested_sample = max(0, min(requested_sample, int(num_samples) - 1))
         max_first = max(0, int(num_samples) - self.window_length_n)
         first_sample = requested_sample - self.window_length_n // 2
 
         first_sample = max(0, min(first_sample, max_first))
-        center_time = requested_sample / sampling_frequency
+        center_time = self.data.get_time_from_sample(requested_sample)
         self._first_sample = first_sample
         slider_value = int(round(first_sample / self.window_length_n))
         slider_value = max(0, min(slider_value, self.horizontalSlider.maximum()))
@@ -365,7 +349,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
         first = int(self._first_sample)
         last = first + int(self.window_length_n)
-        t0 = first / self.data.get_sampling_frequency()
+        t0 = self.data.get_time_from_sample(first)
 
         # Old data flow preserved: fetch raw once, branch per preprocessing step.
         # A fully general interface would re-fetch inside each get_data() call
