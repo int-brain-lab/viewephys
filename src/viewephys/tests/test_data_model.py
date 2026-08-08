@@ -83,6 +83,27 @@ class TestSpikeGLXDataModel:
         # Filtering alone is not tested.
         assert model.get_steps() == ["raw", "butterworth", "destripe", "broadband"]
 
+    def test_fs_t0_override(self, tmp_path):
+        """An explicit fs/t0 override wins over the reader's own metadata."""
+        meta_path = tmp_path / "my_bin_file.bin"
+        bin_path = Path(__file__).parent / "mock_data" / "meta_file.meta"
+        file_info = _mock_spikeglx_file(meta_path, bin_path, 100_000, 384)
+        sr = Reader(file_info["bin_file"])
+
+        model = SpikeGLXDataModel(sr, fs=12345.0, t0=7.0)
+        assert model.get_sampling_frequency() == 12345.0
+        assert model.get_t0() == 7.0
+        assert model.get_time_from_sample(0) == 7.0
+        assert model.get_sample_from_time(7.0) == 0
+        # Duration is metadata-derived (a file property), unaffected by the
+        # clock override.
+        assert model.get_recording_length() == sr.rl
+
+        # No override given: behaves exactly as before (zero-origin, file's own fs).
+        default_model = SpikeGLXDataModel(sr)
+        assert default_model.get_sampling_frequency() == sr.fs
+        assert default_model.get_t0() == 0.0
+
 
 class TestLFPackDataModel:
     def test_single_recording(self, tmp_path):
@@ -170,6 +191,33 @@ class TestLFPackDataModel:
             model = LFPackDataModel(lfpack.LFPackReader(multi, recording=rec))
             assert model.get_num_channels() == 32
             assert model.get_num_samples() == 4096
+
+    def test_t0_from_sync_metadata(self, tmp_path):
+        """A sync-corrected LFPackReader.t0 is surfaced through the model."""
+        lfpack = pytest.importorskip("lfpack")
+        h5 = build_lfpack_h5(
+            tmp_path / "lf.h5", "uuid-aaaa", nc=8, ns=100, t0_sync=40.0
+        )
+        model = LFPackDataModel(lfpack.LFPackReader(h5))
+        assert model.get_t0() == 40.0
+        assert model.get_time_from_sample(0) == 40.0
+
+    def test_t0_defaults_to_zero_without_sync_data(self, tmp_path):
+        """No sync data means LFPackReader.t0 is NaN; the model falls back to zero."""
+        lfpack = pytest.importorskip("lfpack")
+        h5 = build_lfpack_h5(tmp_path / "lf.h5", "uuid-aaaa", nc=8, ns=100)
+        model = LFPackDataModel(lfpack.LFPackReader(h5))
+        assert model.get_t0() == 0.0
+
+    def test_fs_t0_override(self, tmp_path):
+        """An explicit override wins over the file's own and sync-corrected clock."""
+        lfpack = pytest.importorskip("lfpack")
+        h5 = build_lfpack_h5(
+            tmp_path / "lf.h5", "uuid-aaaa", nc=8, ns=100, fs=250.0, t0_sync=40.0
+        )
+        model = LFPackDataModel(lfpack.LFPackReader(h5), fs=999.0, t0=1.0)
+        assert model.get_sampling_frequency() == 999.0
+        assert model.get_t0() == 1.0
 
 
 class TestSpikeInterfaceDataModel:
@@ -448,3 +496,69 @@ class TestSpikeInterfaceDataModel:
         filtered = si_prepro.bandpass_filter(rec, freq_min=300, freq_max=6000)
         model = SpikeInterfaceDataModel({"raw": rec, "filtered": filtered})
         assert model.get_steps() == ["raw", "filtered"]
+
+    def test_fs_t0_override(self):
+        """An explicit fs/t0 override wins over the first recording's own clock."""
+        rec = si_core.generate_recording(
+            num_channels=4,
+            sampling_frequency=30000.0,
+            durations=[0.1],
+            set_probe=False,
+            seed=0,
+        )
+        model = SpikeInterfaceDataModel({"raw": rec}, fs=1000.0, t0=2.5)
+        assert model.get_sampling_frequency() == 1000.0
+        assert model.get_t0() == 2.5
+        assert model.get_time_from_sample(0) == 2.5
+
+    def test_non_uniform_clock_honored_without_override(self):
+        """A genuinely non-uniform ``set_times()`` vector is not linearized.
+
+        Without a user override, sample/time conversion must defer exactly to
+        SpikeInterface's own ``sample_index_to_time``/``time_to_sample_index``,
+        not a ``t0 + sample/fs`` approximation, so a recording with real
+        per-sample drift correction still displays its true times.
+        """
+        rec = si_core.generate_recording(
+            num_channels=4,
+            sampling_frequency=1000.0,
+            durations=[0.1],
+            set_probe=False,
+            seed=0,
+        )
+        # A deliberately non-uniform time vector: constant shift plus a
+        # per-sample ramp, so linear extrapolation from t0 alone would miss.
+        n = rec.get_num_samples()
+        non_uniform_times = np.arange(n) / 1000.0 + 40.0 + np.linspace(0, 0.01, n)
+        rec.set_times(non_uniform_times)
+
+        model = SpikeInterfaceDataModel({"raw": rec})
+
+        for sample in (0, 10, n - 1):
+            assert model.get_time_from_sample(sample) == pytest.approx(
+                rec.sample_index_to_time(sample, segment_index=0)
+            )
+            # The naive linear model would disagree once the ramp accumulates.
+            linear_guess = model.get_t0() + sample / model.get_sampling_frequency()
+            if sample > 0:
+                assert model.get_time_from_sample(sample) != pytest.approx(linear_guess)
+
+        query_time = float(non_uniform_times[50])
+        assert model.get_sample_from_time(query_time) == rec.time_to_sample_index(
+            query_time, segment_index=0
+        )
+
+    def test_fs_t0_override_bypasses_non_uniform_clock(self):
+        """An explicit override forces the linear model even over a real time vector."""
+        rec = si_core.generate_recording(
+            num_channels=4,
+            sampling_frequency=1000.0,
+            durations=[0.1],
+            set_probe=False,
+            seed=0,
+        )
+        n = rec.get_num_samples()
+        rec.set_times(np.arange(n) / 1000.0 + 40.0 + np.linspace(0, 0.01, n))
+
+        model = SpikeInterfaceDataModel({"raw": rec}, fs=2000.0, t0=0.0)
+        assert model.get_time_from_sample(10) == pytest.approx(10 / 2000.0)
