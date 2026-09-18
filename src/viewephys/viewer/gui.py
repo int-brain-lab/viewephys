@@ -715,9 +715,15 @@ class ControllerWiggle(Controller):
         return self.view.gain_line_edit(DISPLAY_MODE_WIGGLE)
 
     def _update_plotItem(self, tlim=None, clim=None):
+        x0, t0, si = self.model.x0, self.model.t0, self.model.si
         if self.model.taxis == 0:
             xlim, ylim = (tlim, clim)
-            wiggle_y = np.r_[self.model.data, np.ones(self.model.ntr)[np.newaxis, :]]
+            transform = [si, 0.0, 0.0, 0.0, 1, 0.0, t0 - si / 2, x0 - 0.5, 1.0]
+            self.transform = np.array(transform).reshape((3, 3)).T
+            wiggle_y = np.r_[
+                self.model.data[:, self.trace_indices],
+                np.ones(self.model.ntr)[np.newaxis, :],
+            ]
             wiggle_y = (
                 wiggle_y / (10 ** (self.gain / 20))
                 + np.arange(self.model.ntr)[np.newaxis, :]
@@ -759,8 +765,10 @@ class ControllerWiggle(Controller):
         self.gain_line_edit.setText(f"{gain:.1f}")
         self._update_plotItem()
 
-    def get_max_time(self):
-        return self.model.nx * self.model.si
+    def redraw(self):
+        """Replot after trace order changed"""
+        self._update_plotItem()
+        self.set_header()
 
 
 class ControllerImage(Controller):
