@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### added
+- `File > open` is now a submenu with SpikeGLX and Open Ephys options. Open Ephys recording folders are read through SpikeInterface. User selects specific recording/stream to view, which is shown as raw and high-passed (300 Hz).
+
 ### fixed
 - Wiggle display mode now respects channel sorting and tracks scrollbar movement after zooming in/out
 - ctrl+P propagation no longer detaches the top/side header axes: the header viewboxes are now linked *to* the seismic view instead of the reverse, freeing the seismic viewbox's single X/Y link slots for cross-window linking. Panning/zooming any linked window now keeps every window's main plot and header strips in sync
