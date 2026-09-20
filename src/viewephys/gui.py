@@ -185,7 +185,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if not ok:
                 return
             folder = folder / label
-        
+
         else:
             folder = recordings[0]
 
