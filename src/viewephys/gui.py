@@ -182,6 +182,12 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             label, ok = QtWidgets.QInputDialog.getItem(
                 self, "Open Ephys", "Recording:", labels, 0, False
             )
+            if not ok:
+                return
+            folder = folder / label
+        
+        else:
+            folder = recordings[0]
 
         names, _ = se.get_neo_streams("openephysbinary", folder)
         name = names[0]

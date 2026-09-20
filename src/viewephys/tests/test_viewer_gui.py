@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import Mock
 
 import numpy as np
@@ -542,6 +543,48 @@ def test_lfpack_recording_selector_searchable(qtbot, monkeypatch, tmp_path):
 
     window.close()
     window.deleteLater()
+
+def test_open_openephys(qtbot, monkeypatch, tmp_path):
+    import spikeinterface.core as si_core
+    import spikeinterface.extractors as se
+
+    recording = tmp_path / "Record Node 101" / "experiment1" / "recording1"
+    recording.mkdir(parents=True)
+    (recording / "structure.oebin").write_text("{}")
+    
+    calls = []
+
+    def fake_read(folder, stream_name=None, **kwargs):
+        calls.append((Path(folder), stream_name))
+        return si_core.generate_recording(
+            num_channels = 4,
+            sampling_frequency = 30_000.0,
+            durations = [0.1],
+            seed = 0
+        )
+    
+    monkeypatch.setattr(se, "read_openephys", fake_read)
+    monkeypatch.setattr(
+        se,
+        "get_neo_streams",
+        lambda name,
+        folder: (["Rhythm Data"], ["0"])
+    )
+
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(
+        window,
+        "on_horizontalSliderReleased",
+        lambda center_time = None: None
+    )
+
+    window.open_openephys(folder=tmp_path)
+
+    assert calls == [(recording, "Rhythm Data")]
+    assert list(window.cbs) == ["raw", "highpass"]
+    window.close()
 
 
 @pytest.mark.parametrize("viewer_cls", [EphysBinViewer, LFPackBinViewer])
