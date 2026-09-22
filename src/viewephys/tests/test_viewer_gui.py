@@ -551,7 +551,8 @@ def test_open_openephys(qtbot, monkeypatch, tmp_path):
 
     recording = tmp_path / "Record Node 101" / "experiment1" / "recording1"
     recording.mkdir(parents=True)
-    (recording / "structure.oebin").write_text("{}")
+    oebin_file = recording / "structure.oebin"
+    oebin_file.write_text("{}")
 
     calls = []
 
@@ -573,7 +574,7 @@ def test_open_openephys(qtbot, monkeypatch, tmp_path):
         window, "on_horizontalSliderReleased", lambda center_time=None: None
     )
 
-    window.open_openephys(folder=tmp_path)
+    window.open_openephys(file=oebin_file)
 
     assert calls == [(recording, "Rhythm Data")]
     assert list(window.cbs) == ["raw", "highpass"]

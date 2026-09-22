@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### added
-- `File > open` is now a submenu with SpikeGLX and Open Ephys options. Open Ephys recording folders are read through SpikeInterface. User selects specific recording/stream to view, which is shown as raw and high-passed (300 Hz).
+- `File > open` is now a submenu with SpikeGLX and Open Ephys options. Open Ephys recording folders are read through SpikeInterface. User selects `structure.oebin` file and is prompted to select data stream to view, which is shown as raw and high-passed (300 Hz).
 
 ### fixed
 - Wiggle display mode now respects channel sorting and tracks scrollbar movement after zooming in/out

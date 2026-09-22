@@ -28,6 +28,7 @@ from viewephys.viewer.qt import create_app
 T_SCALAR = 1  # defaults s for user side
 A_SCALAR = 1e6  # defaults V for user side
 N_SAMPLES_INIT = 2000  # number of samples in the manual pick array
+HIGHPASS_HZ = 300.0  # high-pass cutoff frequency (Hz) for SpikeInterface Recordings
 
 PICK_COLOR = (0, 255, 255)
 
@@ -153,41 +154,22 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self._setup_viewers_and_checkboxes()
         self._setup_slider()
 
-    def open_openephys(self, folder=None):
+    def open_openephys(self, file: str | Path | None = None) -> None:
         """Open Ephys specific loader"""
         import spikeinterface.extractors as se
 
-        if folder is None:
-            folder = QtWidgets.QFileDialog.getExistingDirectory(
+        if file is None:
+            file, _ = QtWidgets.QFileDialog.getOpenFileName(
                 self,
-                "Select Open Ephys recording folder",
+                "Select Open Ephys structure.oebin",
+                "",
+                "Open Ephys (structure.oebin)",
             )
 
-            if not folder:
+            if not file:
                 return
 
-        folder = Path(folder)
-        recordings = sorted(p.parent for p in folder.rglob("structure.oebin"))
-
-        # Check that a structure.oebin exists
-        if not recordings:
-            QtWidgets.QMessageBox.warning(
-                self, "Open Ephys", f"No structure.oebin found in \n{folder}"
-            )
-            return
-
-        # if multiple nodes/recordings, provide selector
-        if len(recordings) > 1:
-            labels = [str(r.relative_to(folder)) for r in recordings]
-            label, ok = QtWidgets.QInputDialog.getItem(
-                self, "Open Ephys", "Recording:", labels, 0, False
-            )
-            if not ok:
-                return
-            folder = folder / label
-
-        else:
-            folder = recordings[0]
+        folder = Path(file).parent
 
         names, _ = se.get_neo_streams("openephysbinary", folder)
         name = names[0]
@@ -206,15 +188,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         raw = raw.select_channels(probe_channels)
         self._show_spikeinterface(raw)
 
-    def _show_spikeinterface(self, raw):
+    def _show_spikeinterface(self, raw) -> None:
         """General loader for spikeinterface objects"""
         import spikeinterface.preprocessing as spre
 
         self._si_raw = raw
         fs = raw.get_sampling_frequency()
         steps = {"raw": raw}
-        if fs / 2 > 300.0:
-            steps["highpass"] = spre.highpass_filter(raw, freq_min=300.0)
+        if fs / 2 > HIGHPASS_HZ:
+            steps["highpass"] = spre.highpass_filter(raw, freq_min=HIGHPASS_HZ)
         self.open_file(file=steps)
 
     def _open_path(self, file: Path, live: bool = False) -> None:
