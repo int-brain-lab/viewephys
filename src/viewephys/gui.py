@@ -122,7 +122,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
     FILE_FILTER = "Electrophysiology files (*.*bin *.dat)"
 
     def open_file(
-        self, *args, live: bool = False, file: str | Path | None = None
+        self, *args, live: bool = False, file: str | Path | dict | None = None
     ) -> None:
         """
         Open a SpikeGLX binary file.
