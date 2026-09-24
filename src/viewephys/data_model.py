@@ -1,5 +1,6 @@
 import abc
 from pathlib import Path
+from typing import final
 
 import numpy as np
 import scipy.signal
@@ -11,6 +12,20 @@ class AbstractDataModel(abc.ABC):
     """
     Abstract class to interface with data loaded from different backends.
     """
+
+    def __init__(self, fs: float | None = None, t0: float | None = None) -> None:
+        """
+        Parameters
+        ----------
+        fs
+            Sampling frequency (Hz) to use instead of the value read from
+            the recording's own metadata.
+        t0
+            Time (s) of sample 0, overriding the backend's metadata clock
+            origin.
+        """
+        self._fs_override = fs
+        self._t0_override = t0
 
     @abc.abstractmethod
     def get_data(
@@ -25,7 +40,7 @@ class AbstractDataModel(abc.ABC):
     def get_num_samples(self) -> int: ...
 
     @abc.abstractmethod
-    def get_sampling_frequency(self) -> float: ...
+    def _get_metadata_sampling_frequency(self) -> float: ...
 
     @abc.abstractmethod
     def get_recording_length(self) -> float: ...
@@ -56,30 +71,77 @@ class AbstractDataModel(abc.ABC):
         """
         return None
 
-    def get_t0(self) -> float:
-        """Time in seconds of sample 0, i.e. the recording's clock origin.
+    def _get_metadata_t0(self) -> float:
+        """Clock origin (s) from metadata.
 
-        Defaults to zero; backends whose clock does not start at zero
-        (e.g. a SpikeInterface recording shifted with ``set_times``) override
-        this. Sampling is assumed linear from this origin: drift within the
-        recording is not modeled.
+        Zero unless a backend's clock does not start at zero (e.g. a
+        SpikeInterface recording shifted with ``set_times``), in which case
+        the backend overrides this.
         """
         return 0.0
 
-    def get_time_from_sample(self, sample: int) -> float:
-        """Time in seconds of a sample index, assuming a linear clock."""
-        return self.get_t0() + sample / self.get_sampling_frequency()
+    def _get_metadata_time_from_sample(self, sample: int) -> float:
+        """Time in seconds of a sample index, per the backend's own metadata.
 
+        Assumes a linear clock (``t0 + sample/fs``) from metadata. Backends
+        whose native clock may be non-uniform (e.g. a SpikeInterface
+        recording with an explicit ``set_times()`` time vector) override this
+        to defer to their own exact per-sample conversion instead.
+        """
+        return (
+            self._get_metadata_t0() + sample / self._get_metadata_sampling_frequency()
+        )
+
+    def _get_metadata_sample_from_time(self, time: float) -> int:
+        """Sample index of a time in seconds, per the backend's own metadata.
+
+        See :meth:`_get_metadata_time_from_sample` for the linear-clock
+        assumption backends may override.
+        """
+        t0 = self._get_metadata_t0()
+        fs = self._get_metadata_sampling_frequency()
+        return int(round((time - t0) * fs))
+
+    @final
+    def get_sampling_frequency(self) -> float:
+        """Sampling frequency (Hz): the user override if given, else metadata."""
+        if self._fs_override is not None:
+            return self._fs_override
+        return self._get_metadata_sampling_frequency()
+
+    @final
+    def get_t0(self) -> float:
+        """Time in seconds of sample 0: the user override if given, else metadata."""
+        if self._t0_override is not None:
+            return self._t0_override
+        return self._get_metadata_t0()
+
+    @final
+    def get_time_from_sample(self, sample: int) -> float:
+        """Time in seconds of a sample index.
+
+        Uses the linear ``t0 + sample/fs`` model when the caller has
+        overridden ``fs`` and/or ``t0``; otherwise defers to the backend's
+        own metadata-derived conversion, which may be non-linear.
+        """
+        if self._fs_override is not None or self._t0_override is not None:
+            return self.get_t0() + sample / self.get_sampling_frequency()
+        return self._get_metadata_time_from_sample(sample)
+
+    @final
     def get_sample_from_time(self, time: float) -> int:
-        """Sample index of a time in seconds, assuming a linear clock."""
-        return int(round((time - self.get_t0()) * self.get_sampling_frequency()))
+        """Sample index of a time in seconds (see ``get_time_from_sample``)."""
+        if self._fs_override is not None or self._t0_override is not None:
+            return int(round((time - self.get_t0()) * self.get_sampling_frequency()))
+        return self._get_metadata_sample_from_time(time)
 
 
 class SpikeGLXDataModel(AbstractDataModel):
     """Data model wrapping ``spikeglx.Reader``."""
 
-    def __init__(self, sr) -> None:
+    def __init__(self, sr, fs: float | None = None, t0: float | None = None) -> None:
         self.sr = sr
+        super().__init__(fs=fs, t0=t0)
 
     @override
     def get_data(
@@ -178,7 +240,7 @@ class SpikeGLXDataModel(AbstractDataModel):
         return self.sr.ns
 
     @override
-    def get_sampling_frequency(self) -> float:
+    def _get_metadata_sampling_frequency(self) -> float:
         """Sampling frequency (Hz) of the recording."""
         return self.sr.fs
 
@@ -251,6 +313,16 @@ class LFPackDataModel(SpikeGLXDataModel):
         """No ADC saturation level: compressed files carry no voltage range."""
         return None
 
+    @override
+    def _get_metadata_t0(self) -> float:
+        """Session-clock time (s) at sample 0, sync-corrected when available.
+
+        ``LFPackReader.t0`` is NaN when the file carries no sync data; fall
+        back to zero, matching ``LFPackReader.times``'s own convention.
+        """
+        t0 = self.sr.t0
+        return t0 if not np.isnan(t0) else 0.0
+
     @property
     def _channels(self) -> dict:
         """Per-channel info from the file, read once and cached.
@@ -297,13 +369,16 @@ class LFPackDataModel(SpikeGLXDataModel):
 
 
 class SpikeInterfaceDataModel(AbstractDataModel):
-    def __init__(self, recordings_dict):
+    def __init__(
+        self, recordings_dict, fs: float | None = None, t0: float | None = None
+    ):
         self.recordings_dict = recordings_dict
 
         self.first_recording = recordings_dict[(next(iter(recordings_dict)))]
         self.first_key = list(recordings_dict.keys())[0]
 
         self.perform_checks_on_recordings()
+        super().__init__(fs=fs, t0=t0)
 
     @override
     def get_data(
@@ -427,13 +502,31 @@ class SpikeInterfaceDataModel(AbstractDataModel):
         return self.first_recording.get_num_samples(segment_index=0)
 
     @override
-    def get_sampling_frequency(self) -> float:
+    def _get_metadata_sampling_frequency(self) -> float:
         return self.first_recording.get_sampling_frequency()
 
     @override
-    def get_t0(self) -> float:
+    def _get_metadata_t0(self) -> float:
         """Time in seconds of sample 0 on the SpikeInterface recording's clock."""
         return self.first_recording.sample_index_to_time(0, segment_index=0)
+
+    @override
+    def _get_metadata_time_from_sample(self, sample: int) -> float:
+        """Time in seconds of a sample index, per SpikeInterface's own clock.
+
+        Delegates to ``sample_index_to_time`` rather than the base class's
+        linear ``t0 + sample/fs`` assumption, so an explicit non-uniform
+        ``set_times()`` time vector is honored exactly.
+        """
+        return self.first_recording.sample_index_to_time(sample, segment_index=0)
+
+    @override
+    def _get_metadata_sample_from_time(self, time: float) -> int:
+        """Sample index of a time in seconds, per SpikeInterface's own clock.
+
+        See :meth:`_get_metadata_time_from_sample`.
+        """
+        return int(self.first_recording.time_to_sample_index(time, segment_index=0))
 
     @override
     def get_recording_length(self) -> float:

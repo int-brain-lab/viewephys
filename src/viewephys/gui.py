@@ -47,7 +47,12 @@ SNS_PALETTE = [
 
 class EphysBinViewer(QtWidgets.QMainWindow):
     def __init__(
-        self, bin_file: str | Path | None = None, *args, **kwargs
+        self,
+        bin_file: str | Path | None = None,
+        *args,
+        fs: float | None = None,
+        t0: float | None = None,
+        **kwargs,
     ):  # TODO: TYPE
         """
         Class for viewing a binary file output from SpikeGLX.
@@ -59,8 +64,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
         :param parent:
         :param sr: ibllib.io.spikeglx.Reader instance
+        :param fs: sampling frequency (Hz) overriding the file/recording's own
+            metadata, for every file subsequently opened in this window.
+        :param t0: clock origin (s) of sample 0, overriding the file/recording's
+            own metadata, for every file subsequently opened in this window.
         """
         super().__init__(*args, *kwargs)
+        self._fs_override = fs
+        self._t0_override = t0
         self.settings = QtCore.QSettings("int-brain-lab", "EphysBinViewer")
         uic.loadUi(Path(__file__).parent.joinpath("nav_file.ui"), self)
         self.setWindowIcon(
@@ -135,7 +146,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             self._open_path(file, live=live)
 
         elif isinstance(file, dict):
-            self.data = SpikeInterfaceDataModel(file)
+            self.data = SpikeInterfaceDataModel(
+                file, fs=self._fs_override, t0=self._t0_override
+            )
 
         else:
             return
@@ -160,7 +173,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 fs=30000,
                 ns=file.stat().st_size / 384 / 2,
             )
-        self.data = SpikeGLXDataModel(sr)
+        self.data = SpikeGLXDataModel(sr, fs=self._fs_override, t0=self._t0_override)
 
     def _setup_slider(self):
         tlabel = self._create_top_label()
@@ -463,7 +476,7 @@ class LFPackBinViewer(EphysBinViewer):
             recording = recordings[0] if recordings else None
 
         reader = lfpack.LFPackReader(file, recording=recording)
-        self.data = LFPackDataModel(reader)
+        self.data = LFPackDataModel(reader, fs=self._fs_override, t0=self._t0_override)
 
     def _build_recording_selector(self, recordings: list[str]) -> None:
         """Show a searchable combo box to pick a recording by UUID substring."""
@@ -505,7 +518,7 @@ class LFPackBinViewer(EphysBinViewer):
 
         recording = self.comboBox_recording.itemText(index)
         reader = lfpack.LFPackReader(self._lfpack_file, recording=recording)
-        self.data = LFPackDataModel(reader)
+        self.data = LFPackDataModel(reader, fs=self._fs_override, t0=self._t0_override)
 
         # Refresh slider bounds and clamp position into range; keep window and zoom.
         self.update_slider_limits()

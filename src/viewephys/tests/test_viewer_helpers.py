@@ -10,13 +10,17 @@ def build_lfpack_h5(
     ns: int = 6000,
     fs: float = 250.0,
     annotate: bool = False,
+    t0_sync: float | None = None,
 ) -> Path:
     """Write a tiny single-recording lfpack HDF5 file for tests.
 
     Requires the optional ``lfpack`` dependency; callers should guard with
     ``pytest.importorskip('lfpack')``.  When ``annotate`` is True, per-channel
     brain-region annotations (``atlas_id``/``acronym``) are stored so the
-    brain-region code path can be exercised.
+    brain-region code path can be exercised.  ``t0_sync`` stores a sync-clock
+    origin (seconds) on the file, exercising the sync-data path of
+    ``LFPackReader.t0``; omitted (``None``) reproduces a file with no sync
+    data, where ``LFPackReader.t0`` is ``NaN``.
     """
     import lfpack
 
@@ -31,7 +35,13 @@ def build_lfpack_h5(
             "acronym": ["void"] * nc,
         }
     lfpack.compress_to_h5(
-        npy, path, recording=recording, fs=fs, n_jobs=1, channels=channels
+        npy,
+        path,
+        recording=recording,
+        fs=fs,
+        n_jobs=1,
+        channels=channels,
+        t0_sync=t0_sync,
     )
     return Path(path)
 
