@@ -3,10 +3,12 @@ from pathlib import Path
 import numpy as np
 import probeinterface as pi
 import pytest
+import spikeinterface
 import spikeinterface.core as si_core
 import spikeinterface.preprocessing as si_prepro
 from ibldsp import voltage
 from numpy.testing import assert_equal as np_assert_equal
+from packaging.version import Version
 from spikeglx import Reader, _mock_spikeglx_file
 
 from viewephys.data_model import (
@@ -215,7 +217,7 @@ class TestSpikeInterfaceDataModel:
         channel_locs = np.array(
             [[0.0, 10.0], [1.0, 11.0], [0.0, 20.0], [1.0, 22.0], [0.0, 30.0]]
         )
-        rec.set_channel_locations(channel_locs)
+        rec.set_dummy_probe_from_locations(channel_locs)
 
         filtered = si_prepro.bandpass_filter(rec, freq_min=300, freq_max=6000)
 
@@ -256,7 +258,8 @@ class TestSpikeInterfaceDataModel:
             set_probe=False,
             seed=0,
         )
-        rec = rec.set_probe(probe, group_mode="by_probe")
+
+        rec = self.set_probe(rec, probe, group_mode="by_probe")
         rec.set_property("inter_sample_shift", sample_shifts)
 
         filtered = si_prepro.bandpass_filter(rec, freq_min=300, freq_max=6000)
@@ -301,7 +304,8 @@ class TestSpikeInterfaceDataModel:
             set_probe=False,
             seed=0,
         )
-        rec = rec.set_probe(probe, group_mode="by_probe")
+
+        rec = self.set_probe(rec, probe, group_mode="by_probe")
 
         filtered = si_prepro.bandpass_filter(rec, freq_min=300, freq_max=6000)
 
@@ -385,7 +389,7 @@ class TestSpikeInterfaceDataModel:
         # One recording with contact locations and another without should fail
         # the recording-state consistency check.
         loc_rec = base.clone()
-        loc_rec.set_channel_locations(
+        loc_rec.set_dummy_probe_from_locations(
             np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
         )
 
@@ -393,11 +397,11 @@ class TestSpikeInterfaceDataModel:
             SpikeInterfaceDataModel({"raw": base, "processed": loc_rec})
 
         loc_base = base.clone()
-        loc_base.set_channel_locations(
+        loc_base.set_dummy_probe_from_locations(
             np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
         )
         loc_other = base.clone()
-        loc_other.set_channel_locations(
+        loc_other.set_dummy_probe_from_locations(
             np.array([[0.0, 0.0], [0.0, 1.0], [0.0, 2.0], [0.0, 3.0]])
         )
 
@@ -410,18 +414,20 @@ class TestSpikeInterfaceDataModel:
         # The smallest valid probe is enough here because this branch only
         # checks the attached-vs-unattached state, not the shank IDs.
         locs = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
-        base_with_locs = base.clone()
-        base_with_locs.set_channel_locations(locs)
 
         probe_rec = base.clone()
-        probe_rec.set_channel_locations(locs)
+        probe_rec.set_dummy_probe_from_locations(locs)
         probe = pi.Probe(ndim=2)
         probe.set_contacts(positions=locs)
         probe.set_device_channel_indices(np.arange(4))
-        probe_rec = probe_rec.set_probe(probe, group_mode="by_probe")
+        probe_rec = self.set_probe(probe_rec, probe, group_mode="by_probe")
 
-        with pytest.raises(ValueError, match="probe attach state"):
-            SpikeInterfaceDataModel({"raw": base_with_locs, "processed": probe_rec})
+        if Version(spikeinterface.__version__) < Version("0.105.0"):
+            base_with_locs = base.clone()
+            base_with_locs.set_channel_locations(locs)
+
+            with pytest.raises(ValueError, match="probe attach state"):
+                SpikeInterfaceDataModel({"raw": base_with_locs, "processed": probe_rec})
 
         # A mismatched probe definition should also fail, especially when the
         # shank IDs differ between otherwise compatible recordings.
@@ -430,8 +436,10 @@ class TestSpikeInterfaceDataModel:
         other_probe.set_shank_ids(np.array([0, 0, 0, 0]))
         other_probe.set_device_channel_indices(np.arange(4))
         probe_mismatch = base.clone()
-        probe_mismatch.set_channel_locations(locs)
-        probe_mismatch = probe_mismatch.set_probe(other_probe, group_mode="by_probe")
+        probe_mismatch.set_dummy_probe_from_locations(locs)
+        probe_mismatch = self.set_probe(
+            probe_mismatch, other_probe, group_mode="by_probe"
+        )
 
         with pytest.raises(ValueError, match="shank IDs"):
             SpikeInterfaceDataModel({"raw": probe_rec, "processed": probe_mismatch})
@@ -448,3 +456,13 @@ class TestSpikeInterfaceDataModel:
         filtered = si_prepro.bandpass_filter(rec, freq_min=300, freq_max=6000)
         model = SpikeInterfaceDataModel({"raw": rec, "filtered": filtered})
         assert model.get_steps() == ["raw", "filtered"]
+
+    def set_probe(self, rec, probe, group_mode) -> si_core.BaseRecording:
+        """Attach a probe and return the resulting recording.
+        Before spikeinterface 0.105, set_probe returns a new recording,
+        from 0.105 it modifies the recording in place and returns None"""
+        attached = rec.set_probe(probe, group_mode=group_mode)
+        if attached is not None:
+            rec = attached
+
+        return rec

@@ -37,7 +37,7 @@ When the picking mode is enabled (menu pick)
 ## Examples
 
 ### Visualize raw binary file through the command line
-Activate your environment and type `viewephys`, you can then load a neuropixel binary file using the file menu.
+Activate your environment and type `viewephys`. Use `File > open > SpikeGLX` to load a neuropixel binary file, or `File > open > Open Ephys` to select an Open Ephys folder (containing `structure.oebin`). The GUI will prompt you to select a specific recording and data stream if multiple exist.
 
 ![alt text](./docs/raw_bin_viewer_destripe.png "Ephys viewer ")
 
