@@ -3,10 +3,12 @@ from pathlib import Path
 import numpy as np
 import probeinterface as pi
 import pytest
+import spikeinterface
 import spikeinterface.core as si_core
 import spikeinterface.preprocessing as si_prepro
 from ibldsp import voltage
 from numpy.testing import assert_equal as np_assert_equal
+from packaging.version import Version
 from spikeglx import Reader, _mock_spikeglx_file
 
 from viewephys.data_model import (
@@ -257,9 +259,7 @@ class TestSpikeInterfaceDataModel:
             seed=0,
         )
 
-        attached = rec.set_probe(probe, group_mode="by_probe")
-        if attached is not None:
-            rec = attached
+        rec = self.set_probe(rec, probe, group_mode="by_probe")
         rec.set_property("inter_sample_shift", sample_shifts)
 
         filtered = si_prepro.bandpass_filter(rec, freq_min=300, freq_max=6000)
@@ -305,9 +305,7 @@ class TestSpikeInterfaceDataModel:
             seed=0,
         )
 
-        attached = rec.set_probe(probe, group_mode="by_probe")
-        if attached is not None:
-            rec = attached
+        rec = self.set_probe(rec, probe, group_mode="by_probe")
 
         filtered = si_prepro.bandpass_filter(rec, freq_min=300, freq_max=6000)
 
@@ -412,8 +410,9 @@ class TestSpikeInterfaceDataModel:
         with pytest.raises(ValueError, match="channel locations"):
             SpikeInterfaceDataModel({"raw": loc_base, "processed": loc_other})
 
-        # A mismatched probe definition should also fail, especially when the
-        # shank IDs differ between otherwise compatible recordings.
+        # A probe-attached recording and a plain recording should not be mixed.
+        # The smallest valid probe is enough here because this branch only
+        # checks the attached-vs-unattached state, not the shank IDs.
         locs = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
 
         probe_rec = base.clone()
@@ -421,21 +420,26 @@ class TestSpikeInterfaceDataModel:
         probe = pi.Probe(ndim=2)
         probe.set_contacts(positions=locs)
         probe.set_device_channel_indices(np.arange(4))
-        attached = probe_rec.set_probe(probe, group_mode="by_probe")
+        probe_rec = self.set_probe(probe_rec, probe, group_mode="by_probe")
 
-        if attached is not None:
-            probe_rec = attached
+        if Version(spikeinterface.__version__) < Version("0.105.0"):
+            base_with_locs = base.clone()
+            base_with_locs.set_channel_locations(locs)
 
+            with pytest.raises(ValueError, match="probe attach state"):
+                SpikeInterfaceDataModel({"raw": base_with_locs, "processed": probe_rec})
+
+        # A mismatched probe definition should also fail, especially when the
+        # shank IDs differ between otherwise compatible recordings.
         other_probe = pi.Probe(ndim=2)
         other_probe.set_contacts(positions=locs)
         other_probe.set_shank_ids(np.array([0, 0, 0, 0]))
         other_probe.set_device_channel_indices(np.arange(4))
         probe_mismatch = base.clone()
         probe_mismatch.set_dummy_probe_from_locations(locs)
-        attached = probe_mismatch.set_probe(other_probe, group_mode="by_probe")
-
-        if attached is not None:
-            probe_mismatch = attached
+        probe_mismatch = self.set_probe(
+            probe_mismatch, other_probe, group_mode="by_probe"
+        )
 
         with pytest.raises(ValueError, match="shank IDs"):
             SpikeInterfaceDataModel({"raw": probe_rec, "processed": probe_mismatch})
@@ -452,3 +456,13 @@ class TestSpikeInterfaceDataModel:
         filtered = si_prepro.bandpass_filter(rec, freq_min=300, freq_max=6000)
         model = SpikeInterfaceDataModel({"raw": rec, "filtered": filtered})
         assert model.get_steps() == ["raw", "filtered"]
+
+    def set_probe(self, rec, probe, group_mode) -> si_core.BaseRecording:
+        """Attach a probe and return the resulting recording.
+        Before spikeinterface 0.105, set_probe returns a new recording,
+        from 0.105 it modifies the recording in place and returns None"""
+        attached = rec.set_probe(probe, group_mode=group_mode)
+        if attached is not None:
+            rec = attached
+
+        return rec
