@@ -4,6 +4,7 @@
 
 ### added
 - `File > open` is now a submenu with SpikeGLX and Open Ephys options. Open Ephys recording folders are read through SpikeInterface. User selects `structure.oebin` file and is prompted to select data stream to view, which is shown as raw and high-passed (300 Hz).
+- `Probe > Load from probeinterface library` menu to attach a probe geometry, chosen by manufacturer and model, to a loaded spikeinterface recording.
 
 ### fixed
 - Wiggle display mode now respects channel sorting and tracks scrollbar movement after zooming in/out
