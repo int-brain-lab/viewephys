@@ -80,6 +80,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             "Open Ephys", lambda checked=False: self.open_openephys()
         )
 
+        # probe menu
+        self.menuProbe = self.menubar.addMenu("Probe")
+        self.action_load_probe = self.menuProbe.addAction(
+            "Load geometry from probeinterface library...",
+            lambda checked=False: self.load_probe_from_library(),
+        )
+        self.action_load_probe.setEnabled(False)
+        self._si_raw = None
+
         self.actionopen_live_recording.triggered.connect(self.open_file_live)
         self.horizontalSlider.setMinimum(0)
         self.horizontalSlider.setSingleStep(1)
@@ -188,16 +197,78 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         raw = raw.select_channels(probe_channels)
         self._show_spikeinterface(raw)
 
+    def load_probe_from_library(self):
+        """Select probe from probeinterface library and attach to recording"""
+        import probeinterface as pi
+
+        if self._si_raw is None:
+            QtWidgets.QMessageBox.warning(self, "Probe", "Open a recording first.")
+            return
+
+        try:
+            manufacturers = pi.list_manufacturers()
+
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self, "Probe Library", f"Could not reach the probe library:\n{e}"
+            )
+            return
+
+        manufacturer, ok = QtWidgets.QInputDialog.getItem(
+            self, "Probe Library", "Manufacturer:", manufacturers, 0, False
+        )
+
+        if not ok:
+            return
+
+        names = pi.list_probes_by_manufacturer(manufacturer)
+        name, ok = QtWidgets.QInputDialog.getItem(
+            self, "Probe Library", "Probe:", names, 0, True
+        )
+
+        if not ok:
+            return
+
+        try:
+            probe = pi.get_probe(manufacturer, name)
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Probe Library", str(e))
+            return
+
+        self._attach_probe(probe)
+
+    def _attach_probe(self, probe):
+        """Attach a probeinterface Probe to an open recording and redisplay"""
+        try:
+            raw = self._si_raw
+            if probe.device_channel_indices is None:
+                probe.set_device_channel_indices(np.arange(raw.get_num_channels()))
+
+            # spikeinterface < 0.105 returns a new recording with the probe
+            # attached; 0.105+ attaches in place and returns None
+            attached = raw.set_probe(probe, group_mode="by_probe")
+            if attached is not None:
+                raw = attached
+
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self, "Probe", f"Could not attach probe:\n{e}"
+            )
+            return
+
+        self._show_spikeinterface(raw)
+
     def _show_spikeinterface(self, raw) -> None:
         """General loader for spikeinterface objects"""
         import spikeinterface.preprocessing as spre
 
-        self._si_raw = raw
         fs = raw.get_sampling_frequency()
         steps = {"raw": raw}
         if fs / 2 > HIGHPASS_HZ:
             steps["highpass"] = spre.highpass_filter(raw, freq_min=HIGHPASS_HZ)
         self.open_file(file=steps)
+        self._si_raw = raw
+        self.action_load_probe.setEnabled(True)
 
     def _open_path(self, file: Path, live: bool = False) -> None:
         """Build ``self.data`` from a file path.

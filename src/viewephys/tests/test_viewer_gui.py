@@ -581,6 +581,45 @@ def test_open_openephys(qtbot, monkeypatch, tmp_path):
     window.close()
 
 
+def test_load_probe_from_library(qtbot, monkeypatch):
+    import probeinterface as pi
+    import spikeinterface.core as si_core
+
+    probe = pi.generate_linear_probe(num_elec=4)
+    monkeypatch.setattr(pi, "list_manufacturers", lambda: ["acme"])
+    monkeypatch.setattr(pi, "list_probes_by_manufacturer", lambda m: ["lin4"])
+    monkeypatch.setattr(pi, "get_probe", lambda m, name: probe)
+    answers = [("acme", True), ("lin4", True)]
+    monkeypatch.setattr(
+        QtWidgets.QInputDialog, "getItem", lambda *a, **k: answers.pop(0)
+    )
+
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+    monkeypatch.setattr(
+        window, "on_horizontalSliderReleased", lambda center_time=None: None
+    )
+
+    assert not window.action_load_probe.isEnabled()
+
+    raw = si_core.generate_recording(
+        num_channels=4,
+        sampling_frequency=30_000.0,
+        durations=[0.1],
+        set_probe=False,
+        seed=0,
+    )
+
+    window._show_spikeinterface(raw)
+    assert window.action_load_probe.isEnabled()
+    assert "y" not in window.data.get_header()
+
+    window.load_probe_from_library()
+    header = window.data.get_header()
+    np.testing.assert_array_equal(header["y"], probe.contact_positions[:, 1])
+    window.close()
+
+
 @pytest.mark.parametrize("viewer_cls", [EphysBinViewer, LFPackBinViewer])
 def test_close_without_opening_file(qtbot, viewer_cls):
     """Closing a viewer before any file is opened must not raise."""
