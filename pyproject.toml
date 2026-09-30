@@ -19,6 +19,7 @@ dependencies = [
     "iblutil>=1.6.0",
     "numpy",
     "pandas",
+    "probeinterface",
     "pyqtgraph>=0.13.1",
     "qtpy",
     "scipy",

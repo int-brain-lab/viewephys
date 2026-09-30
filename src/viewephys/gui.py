@@ -244,7 +244,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if probe.device_channel_indices is None:
                 probe.set_device_channel_indices(np.arange(raw.get_num_channels()))
 
-            raw = self._set_probe(raw, probe)
+            raw = raw.set_probe(probe, group_mode="by_probe")
 
         except Exception as e:
             QtWidgets.QMessageBox.critical(
@@ -253,14 +253,6 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             return
 
         self._show_spikeinterface(raw)
-
-    def _set_probe(self, rec, probe, group_mode: str = "by_probe"):
-        """Attach a probe and return the resulting recording"""
-        attached = rec.set_probe(probe, group_mode=group_mode)
-        if attached is not None:
-            rec = attached
-
-        return rec
 
     def _show_spikeinterface(self, raw) -> None:
         """General loader for spikeinterface objects"""
