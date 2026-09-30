@@ -244,7 +244,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if probe.device_channel_indices is None:
                 probe.set_device_channel_indices(np.arange(raw.get_num_channels()))
 
-            raw = raw.set_probe(probe, group_mode="by_probe")
+            # spikeinterface < 0.105 returns a new recording with the probe
+            # attached; 0.105+ attaches in place and returns None
+            attached = raw.set_probe(probe, group_mode="by_probe")
+            if attached is not None:
+                raw = attached
 
         except Exception as e:
             QtWidgets.QMessageBox.critical(
