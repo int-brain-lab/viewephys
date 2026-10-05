@@ -37,7 +37,7 @@ When the picking mode is enabled (menu pick)
 ## Examples
 
 ### Visualize raw data through the GUI
-Activate your environment and type `viewephys`. Use `File > open > SpikeGLX` to load a neuropixel binary file, or `File > open > Open Ephys` to select an Open Ephys folder (containing `structure.oebin`). The GUI will prompt you to select a specific recording and data stream if multiple exist.
+Activate your environment and type `viewephys`. Use `File > open > SpikeGLX` to load a neuropixel binary file, or `File > open > Open Ephys` to select an Open Ephys folder (containing `structure.oebin`). The GUI will prompt you to select a specific recording and data stream if multiple exist. `File > open > NWB` loads an NWB file containing an electrical series. If the file holds several electrical series you are prompted to select one.
 
 For recordings without probe information, `Probe > Load from probeinterface library` allows for attaching probe geometries of different manufacturers and models from the probeinterface library (fetched online) to recordings. Channels are then shown at their positions on the probe, and can be spatially sorted.
 

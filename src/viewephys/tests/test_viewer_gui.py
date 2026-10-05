@@ -581,6 +581,50 @@ def test_open_openephys(qtbot, monkeypatch, tmp_path):
     window.close()
 
 
+def test_open_nwb(qtbot, monkeypatch, tmp_path):
+    import spikeinterface.core as si_core
+    import spikeinterface.extractors as se
+
+    recording = tmp_path / "nwb_recording"
+    recording.mkdir(parents=True)
+    nwb_file = recording / "test.nwb"
+    nwb_file.write_text("{}")
+
+    calls = []
+
+    def fake_read(file, electrical_series_path=None, **kwargs):
+        calls.append((Path(file), electrical_series_path))
+        return si_core.generate_recording(
+            num_channels=4, sampling_frequency=30_000.0, durations=[0.1], seed=0
+        )
+
+    monkeypatch.setattr(se, "read_nwb_recording", fake_read)
+    monkeypatch.setattr(
+        se.nwbextractors.NwbRecordingExtractor,
+        "fetch_available_electrical_series_paths",
+        lambda file: ["series1", "series2"],
+    )
+
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(
+        window, "on_horizontalSliderReleased", lambda center_time=None: None
+    )
+
+    monkeypatch.setattr(
+        QtWidgets.QInputDialog,
+        "getItem",
+        staticmethod(lambda *a, **k: ("series2", True)),
+    )
+
+    window.open_nwb(file=nwb_file)
+
+    assert calls == [(nwb_file, "series2")]
+    assert list(window.cbs) == ["raw", "highpass"]
+    window.close()
+
+
 def test_load_probe_from_library(qtbot, monkeypatch):
     import probeinterface as pi
     import spikeinterface.core as si_core

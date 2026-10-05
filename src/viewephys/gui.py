@@ -79,6 +79,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.menuOpen.addAction(
             "Open Ephys", lambda checked=False: self.open_openephys()
         )
+        self.menuOpen.addAction("Open NWB", lambda checked=False: self.open_nwb())
 
         # probe menu
         self.menuProbe = self.menubar.addMenu("Probe")
@@ -195,6 +196,45 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         # drop AUX channels to avoid gain check error
         probe_channels = [ch for ch in raw.channel_ids if "AUX" not in str(ch)]
         raw = raw.select_channels(probe_channels)
+        self._show_spikeinterface(raw)
+
+    def open_nwb(self, file: str | Path | None = None) -> None:
+        """NWB specific loader"""
+        import spikeinterface.extractors as se
+
+        if file is None:
+            file, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self, "Select NWB file with electrical series", "", "*.nwb"
+            )
+            if not file:
+                return
+        nwbre = se.nwbextractors.NwbRecordingExtractor
+        available_paths = nwbre.fetch_available_electrical_series_paths(file)
+        if not available_paths:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No voltage recording found",
+                "SpikeInterface found no ElectricalSeries in this NWB file.\n\n"
+                "It may contain spike times only, intracellular recordings, "
+                "or voltage data stored in a form this reader does not recognise.",
+            )
+            return
+
+        if len(available_paths) == 1:
+            selected_path = available_paths[0]
+        else:
+            selected_path, ok = QtWidgets.QInputDialog.getItem(
+                self,
+                "Select Electrical Series",
+                "Select an ElectricalSeries:",
+                available_paths,
+                0,
+                False,
+            )
+            if not ok:
+                return
+        raw = se.read_nwb_recording(file, electrical_series_path=selected_path)
+
         self._show_spikeinterface(raw)
 
     def load_probe_from_library(self):
