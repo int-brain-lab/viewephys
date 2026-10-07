@@ -79,7 +79,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.menuOpen.addAction(
             "Open Ephys", lambda checked=False: self.open_openephys()
         )
-        self.menuOpen.addAction("Open NWB", lambda checked=False: self.open_nwb())
+        self.menuOpen.addAction("NWB", lambda checked=False: self.open_nwb())
 
         # probe menu
         self.menuProbe = self.menubar.addMenu("Probe")
@@ -199,7 +199,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self._show_spikeinterface(raw)
 
     def open_nwb(self, file: str | Path | None = None) -> None:
-        """NWB specific loader"""
+        """
+        NWB specific loader.
+
+        Parameters
+        ----------
+        file : str or Path, optional
+            Path to the NWB file; a file dialog is shown if None.
+        """
         import spikeinterface.extractors as se
 
         if file is None:
@@ -234,7 +241,6 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if not ok:
                 return
         raw = se.read_nwb_recording(file, electrical_series_path=selected_path)
-
         self._show_spikeinterface(raw)
 
     def load_probe_from_library(self):

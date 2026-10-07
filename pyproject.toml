@@ -29,7 +29,7 @@ dependencies = [
 
 [project.optional-dependencies]
 lfpack = ["lfpack", "iblatlas"]  # HDF5-packed LFP files; drags in h5py + PyWavelets
-nwb = ["h5py"] # required for reading NWB files with spikeinterface
+nwb = ["h5py"]  # required for reading NWB files with spikeinterface
 dev = [
   "pytest",
   "pytest-qt",
