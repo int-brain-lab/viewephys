@@ -669,7 +669,7 @@ def test_load_probe_from_library(qtbot, monkeypatch):
 def test_replay_start_and_stop(qtbot, monkeypatch, tmp_path):
     from spikeglx import OnlineReader, _mock_spikeglx_file
 
-    info = _mock_spikeglx_file(tmp_path / "rec.ap.bin", META, 3000, 384)
+    info = _mock_spikeglx_file(tmp_path / "rec.ap.bin", META, 3000, 385)
     window = EphysBinViewer()
     qtbot.addWidget(window)
     monkeypatch.setattr(

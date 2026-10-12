@@ -91,6 +91,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         )
         self._replay_stop: threading.Event | None = None
         self._replay_dir: tempfile.TemporaryDirectory | None = None
+        self._replay_thread: threading.Thread | None = None
 
         # probe menu
         self.menuProbe = self.menubar.addMenu("Probe")
@@ -270,6 +271,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
     def start_replay(
         self, source: str | Path | None = None, speed: float = 1.0
     ) -> None:
+        """Replay a SpikeGLX recording as if it were being acquired live."""
         from viewephys.replay import write_replay
 
         self._stop_replay()
@@ -281,7 +283,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             if not source:
                 return
         source = Path(source)
-        self._replay_dir = tempfile.TemporaryDirectory(prefix="viewephys_replay_")
+        self._replay_dir = tempfile.TemporaryDirectory(
+            prefix="viewephys_replay_", ignore_cleanup_errors=True
+        )
         destination = Path(self._replay_dir.name)
 
         self._replay_stop = threading.Event()
@@ -296,6 +300,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             daemon=True,
         )
 
+        self._replay_thread = thread
         thread.start()
         dest_bin = destination / source.with_suffix(".bin").name
         for _ in range(100):
@@ -308,14 +313,20 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 self, "Replay", "The replay did not start writing."
             )
             return
-        self.open_file(file=destination / source.with_suffix(".bin").name, live=True)
+        self.open_file(file=dest_bin, live=True)
 
     def _stop_replay(self) -> None:
+        """Stop running a replay, if any, and remove its temporary folder."""
         self._live_timer.stop()
         if self._replay_stop is not None:
             self._replay_stop.set()
             self._replay_stop = None
+        if self._replay_thread is not None:
+            self._replay_thread.join(timeout=5)
+            self._replay_thread = None
         if self._replay_dir is not None:
+            if hasattr(self, "data") and hasattr(self.data, "sr"):
+                self.data.sr.close()
             self._replay_dir.cleanup()
             self._replay_dir = None
 
