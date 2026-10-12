@@ -20,6 +20,8 @@ from viewephys.tests.test_viewer_helpers import (
 )
 from viewephys.viewer.gui import EasyQC, viewseis
 
+META = Path(__file__).parent / "mock_data" / "meta_file.meta"
+
 
 @pytest.fixture
 def synthetic_seis():
@@ -661,6 +663,30 @@ def test_load_probe_from_library(qtbot, monkeypatch):
     window.load_probe_from_library()
     header = window.data.get_header()
     np.testing.assert_array_equal(header["y"], probe.contact_positions[:, 1])
+    window.close()
+
+
+def test_replay_start_and_stop(qtbot, monkeypatch, tmp_path):
+    from spikeglx import OnlineReader, _mock_spikeglx_file
+
+    info = _mock_spikeglx_file(tmp_path / "rec.ap.bin", META, 3000, 385)
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+    monkeypatch.setattr(
+        window, "on_horizontalSliderReleased", lambda center_time=None: None
+    )
+
+    window.start_replay(source=info["bin_file"], speed=0)
+
+    assert isinstance(window.data.sr, OnlineReader)
+    assert window._live_timer.isActive()
+    replay_dir = Path(window._replay_dir.name)
+    assert window._path.parent == replay_dir
+
+    window._stop_replay()
+    assert not window._live_timer.isActive()
+    assert window._replay_dir is None
+    assert not replay_dir.exists()
     window.close()
 
 

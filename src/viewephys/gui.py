@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import tempfile
+import threading
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -29,6 +32,7 @@ T_SCALAR = 1  # defaults s for user side
 A_SCALAR = 1e6  # defaults V for user side
 N_SAMPLES_INIT = 2000  # number of samples in the manual pick array
 HIGHPASS_HZ = 300.0  # high-pass cutoff frequency (Hz) for SpikeInterface Recordings
+QT_TIMER_INTERVAL = 250  # ms between live data refreshes
 
 PICK_COLOR = (0, 255, 255)
 
@@ -69,7 +73,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         )
         self.window_length_n = 10000  # window length in samples
 
-        # open menu
+        # open submenu
         self.menuOpen = QtWidgets.QMenu("open", self)
         self.menuFile.insertMenu(self.actionopen_live_recording, self.menuOpen)
         self.menuFile.removeAction(
@@ -80,6 +84,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             "Open Ephys", lambda checked=False: self.open_openephys()
         )
         self.menuOpen.addAction("NWB", lambda checked=False: self.open_nwb())
+
+        # replay submenu
+        self.actionreplay = self.menuFile.addAction(
+            "replay SpikeGLX", lambda checked=False: self.start_replay()
+        )
+        self._replay_stop: threading.Event | None = None
+        self._replay_dir: tempfile.TemporaryDirectory | None = None
+        self._replay_thread: threading.Thread | None = None
 
         # probe menu
         self.menuProbe = self.menubar.addMenu("Probe")
@@ -115,6 +127,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             self.on_lineEdit_windowSizeChanged
         )
         self._update_time_label()
+
+        self._path: Path | None = None
+        self._live_timer = QtCore.QTimer(self)
+        self._live_timer.setInterval(QT_TIMER_INTERVAL)
+        self._live_timer.timeout.connect(self._on_live_tick)
         self.show()
 
         self.data: SpikeGLXDataModel | SpikeInterfaceDataModel
@@ -140,6 +157,8 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         :param live: Whether the binary file is currently being recorded in SpileGLX
         :param file: Full filepath to the file to open.
         """
+        if not live:
+            self._stop_replay()
         if file is None:
             file, _ = QtWidgets.QFileDialog.getOpenFileName(
                 parent=self,
@@ -152,6 +171,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
         if isinstance(file, (str, Path)):
             file = Path(file)
+            self._path = file
             self.settings.setValue("bin_file_path", str(file.parent))
             self._open_path(file, live=live)
 
@@ -160,6 +180,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
         else:
             return
+
+        if live:
+            self._live_timer.start()
+        else:
+            self._live_timer.stop()
 
         self._setup_viewers_and_checkboxes()
         self._setup_slider()
@@ -242,6 +267,68 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 return
         raw = se.read_nwb_recording(file, electrical_series_path=selected_path)
         self._show_spikeinterface(raw)
+
+    def start_replay(
+        self, source: str | Path | None = None, speed: float = 1.0
+    ) -> None:
+        """Replay a SpikeGLX recording as if it were being acquired live."""
+        from viewephys.replay import write_replay
+
+        self._stop_replay()
+
+        if source is None:
+            source, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self, "Select SpikeGLX file", "", "SpikeGLX (*.bin *.cbin)"
+            )
+            if not source:
+                return
+        source = Path(source)
+        self._replay_dir = tempfile.TemporaryDirectory(
+            prefix="viewephys_replay_", ignore_cleanup_errors=True
+        )
+        destination = Path(self._replay_dir.name)
+
+        self._replay_stop = threading.Event()
+        thread = threading.Thread(
+            target=write_replay,
+            args=(source, destination),
+            kwargs={
+                "speed": speed,
+                "chunk_s": QT_TIMER_INTERVAL / 1000.0,
+                "stop": self._replay_stop,
+            },
+            daemon=True,
+        )
+
+        self._replay_thread = thread
+        thread.start()
+        dest_bin = destination / source.with_suffix(".bin").name
+        for _ in range(100):
+            if dest_bin.exists() and dest_bin.stat().st_size > 0:
+                break
+            time.sleep(0.1)
+        else:
+            self._stop_replay()
+            QtWidgets.QMessageBox.critical(
+                self, "Replay", "The replay did not start writing."
+            )
+            return
+        self.open_file(file=dest_bin, live=True)
+
+    def _stop_replay(self) -> None:
+        """Stop running a replay, if any, and remove its temporary folder."""
+        self._live_timer.stop()
+        if self._replay_stop is not None:
+            self._replay_stop.set()
+            self._replay_stop = None
+        if self._replay_thread is not None:
+            self._replay_thread.join(timeout=5)
+            self._replay_thread = None
+        if self._replay_dir is not None:
+            if hasattr(self, "data") and hasattr(self.data, "sr"):
+                self.data.sr.close()
+            self._replay_dir.cleanup()
+            self._replay_dir = None
 
     def load_probe_from_library(self):
         """Select probe from probeinterface library and attach to recording"""
@@ -334,6 +421,19 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 ns=file.stat().st_size / 384 / 2,
             )
         self.data = SpikeGLXDataModel(sr)
+
+    def _on_live_tick(self) -> None:
+        if self._path is None:
+            return
+        self._open_path(self._path, live=True)
+        self.update_slider_limits()
+        n = self.data.get_num_samples()
+        self._first_sample = max(0, n - self.window_length_n)
+        self.horizontalSlider.blockSignals(True)
+        self.horizontalSlider.setValue(self.horizontalSlider.maximum())
+        self.horizontalSlider.blockSignals(False)
+        self._update_time_label()
+        self.on_horizontalSliderReleased()
 
     def _setup_slider(self):
         tlabel = self._create_top_label()
@@ -585,6 +685,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         this window, Qt will automatically handle the window close.
         """
         # self.viewers only exists once a file has been opened.
+        self._stop_replay()
         for ev in getattr(self, "viewers", {}).values():
             if ev is not None:
                 ev.close()
