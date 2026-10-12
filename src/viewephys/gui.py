@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import tempfile
+import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -84,8 +86,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.menuOpen.addAction("NWB", lambda checked=False: self.open_nwb())
 
         # replay submenu
-        self.actionreplay = self.menuFile.addAction("replay SpikeGLX", lambda checked=False: self.start_replay())
-        self._replay_stop = None
+        self.actionreplay = self.menuFile.addAction(
+            "replay SpikeGLX", lambda checked=False: self.start_replay()
+        )
+        self._replay_stop: threading.Event | None = None
+        self._replay_dir: tempfile.TemporaryDirectory | None = None
 
         # probe menu
         self.menuProbe = self.menubar.addMenu("Probe")
@@ -122,7 +127,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         )
         self._update_time_label()
 
-        self._path = None
+        self._path: Path | None = None
         self._live_timer = QtCore.QTimer(self)
         self._live_timer.setInterval(QT_TIMER_INTERVAL)
         self._live_timer.timeout.connect(self._on_live_tick)
@@ -262,16 +267,19 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         raw = se.read_nwb_recording(file, electrical_series_path=selected_path)
         self._show_spikeinterface(raw)
 
-    def start_replay(self) -> None:
-        import tempfile
-        import threading
-
+    def start_replay(
+        self, source: str | Path | None = None, speed: float = 1.0
+    ) -> None:
         from viewephys.replay import write_replay
+
         self._stop_replay()
 
-        source, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select SpikeGLX file", "", "SpikeGLX (*.bin, *.cbin)")
-        if not source:
-            return
+        if source is None:
+            source, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self, "Select SpikeGLX file", "", "SpikeGLX (*.bin *.cbin)"
+            )
+            if not source:
+                return
         source = Path(source)
         self._replay_dir = tempfile.TemporaryDirectory(prefix="viewephys_replay_")
         destination = Path(self._replay_dir.name)
@@ -280,7 +288,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         thread = threading.Thread(
             target=write_replay,
             args=(source, destination),
-            kwargs={"speed": 1.0, "chunk_s": QT_TIMER_INTERVAL / 1000., "stop": self._replay_stop},
+            kwargs={
+                "speed": speed,
+                "chunk_s": QT_TIMER_INTERVAL / 1000.0,
+                "stop": self._replay_stop,
+            },
             daemon=True,
         )
 
@@ -292,7 +304,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             time.sleep(0.1)
         else:
             self._stop_replay()
-            QtWidgets.QMessageBox.critical(self, "Replay", "The replay did not start writing.")
+            QtWidgets.QMessageBox.critical(
+                self, "Replay", "The replay did not start writing."
+            )
             return
         self.open_file(file=destination / source.with_suffix(".bin").name, live=True)
 
@@ -301,7 +315,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if self._replay_stop is not None:
             self._replay_stop.set()
             self._replay_stop = None
-        if getattr(self, "_replay_dir", None) is not None:
+        if self._replay_dir is not None:
             self._replay_dir.cleanup()
             self._replay_dir = None
 

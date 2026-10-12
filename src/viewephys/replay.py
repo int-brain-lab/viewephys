@@ -2,18 +2,27 @@
 
 Writes the source .bin to a destination file chunk by chunk, sleeping between writes.
 """
+
 from __future__ import annotations
 
 import shutil
-import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import numpy as np
 import spikeglx
 
+if TYPE_CHECKING:
+    import threading
 
-def write_replay(source: str | Path, destination: str | Path, speed: float = 1.0, chunk_s: float = 0.25, stop: threading.Event | None = None) -> Path:
+
+def write_replay(
+    source: str | Path,
+    destination: str | Path,
+    speed: float = 1.0,
+    chunk_s: float = 0.25,
+    stop: threading.Event | None = None,
+) -> Path:
     """Writes source .bin to destination in chunks.
 
     Args:
@@ -21,13 +30,14 @@ def write_replay(source: str | Path, destination: str | Path, speed: float = 1.0
         destination (str | Path): Destination directory to write to
         speed (float, optional): Speed of writing. Defaults to 1.0.
         chunk_s (float, optional): Chunk size in seconds. Defaults to 1.0.
-        stop (threading.Event | None, optional): Event to signal stopping. Defaults to None.
+        stop (threading.Event | None, optional): Event to signal stopping.
+            Defaults to None.
 
     Returns:
         dest_bin: Path to written file
     """
     source = Path(source)
-    meta = source.with_suffix('.meta')
+    meta = source.with_suffix(".meta")
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
 

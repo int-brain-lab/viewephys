@@ -41,6 +41,8 @@ Activate your environment and type `viewephys`. Use `File > open > SpikeGLX` to 
 
 For recordings without probe information, `Probe > Load from probeinterface library` allows for attaching probe geometries of different manufacturers and models from the probeinterface library (fetched online) to recordings. Channels are then shown at their positions on the probe, and can be spatially sorted.
 
+`File > replay SpikeGLX` replays a SpikeGLX recording (`.bin` or `.cbin`) at real-time pace, writing a growing copy to a temporary folder and following the file as it grows, mimicking `open live recording` during acquisition. Note the replay is written to the system temporary directory, so there must be enough free space for a copy of the recording.
+
 ![alt text](./docs/raw_bin_viewer_destripe.png "Ephys viewer ")
 
 ### Visualize raw binary file through the command line
