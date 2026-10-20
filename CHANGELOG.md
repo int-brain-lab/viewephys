@@ -5,6 +5,7 @@
 ### added
 - `File > open` is now a submenu with SpikeGLX, Open Ephys, and NWB options. Open Ephys recording folders are read through SpikeInterface. User selects `structure.oebin` file and is prompted to select data stream to view, which is shown as raw and high-passed (300 Hz).
 - `File > open > NWB` to load an NWB file. The electrical series to display is chosen from a drop-down when the file holds several.
+- New CLI call `viewephys-replay` allows you to "replay" a recording as if it were being acquired: the file is copied chunk by chunk at real-time pace into a designated folder, which the viewer opens in live mode and follows. Useful for trying live mode without direct acquisition. The new file must be manually deleted after the user ends the replay.
 - `Probe > Load from probeinterface library` menu to attach a probe geometry, chosen by manufacturer and model, to a loaded spikeinterface recording.
 
 ### fixed

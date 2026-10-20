@@ -49,6 +49,12 @@ Alternatively you can point the viewer to a specific file using the command line
 viewphys -f /path/to/raw.bin
 ```
 
+You can also "replay" `.bin` or `.cbin` files using the `viewephys-replay` command. This will rewrite the specified file to a new location in chunks and allow you to open it with `File > open live recording` in the viewephys GUI.
+
+```shell
+viewephys-replay /path/to/raw.bin -o /path/to/replay/directory --speed 0.25
+```
+
 ### Load in a numpy array or slice
 
 `viewephys` can be used through the Python console or iPython, allowing you to create

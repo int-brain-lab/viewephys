@@ -50,5 +50,56 @@ def viewephys():
     sys.exit(app.exec())
 
 
+def replay():
+    """Replay a SpikeGLX recording into a growing file the GUI can follow."""
+    parser = argparse.ArgumentParser(
+        description="Replay a SpikeGLX recording as if it were being acquired live"
+    )
+    parser.add_argument("source", help="path to the .bin or .cbin file to replay")
+    parser.add_argument(
+        "-o",
+        "--out",
+        default=None,
+        help="destination directory (default: ./<name>_replay)",
+    )
+    parser.add_argument(
+        "--speed",
+        type=float,
+        default=1.0,
+        help="speed multiplier; 0 writes as fast as possible",
+    )
+    parser.add_argument(
+        "--chunk-s", type=float, default=0.25, help="seconds of data written per chunk"
+    )
+    args = parser.parse_args()
+
+    from pathlib import Path
+
+    from viewephys.replay import replay_path, write_replay
+
+    source = Path(args.source).resolve()
+    if not source.exists():
+        parser.error(f"no such file: {source}")
+    destination = (
+        Path(args.out)
+        if args.out
+        else (Path.cwd() / f"{source.name.split('.')[0]}_replay")
+    )
+    destination = (
+        Path(args.out)
+        if args.out
+        else (Path.cwd() / f"{source.name.split('.')[0]}_replay")
+    )
+    print(f"replaying {source}")
+    print("open this file in the GUI with File > open live recording:")
+    print(f"  {replay_path(source, destination)}")
+    try:
+        write_replay(source, destination, speed=args.speed, chunk_s=args.chunk_s)
+    except KeyboardInterrupt:
+        print("\nreplay interrupted")
+        return
+    print("replay finished")
+
+
 if __name__ == "__main__":
     viewephys()
