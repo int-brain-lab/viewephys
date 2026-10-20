@@ -42,7 +42,7 @@ def write_replay(
     destination.mkdir(parents=True, exist_ok=True)
 
     sr = spikeglx.Reader(source)
-    dest_bin = destination / source.with_suffix(".bin").name
+    dest_bin = replay_path(source, destination)
     shutil.copy(meta, destination / meta.name)
 
     chunk = int(sr.fs * chunk_s)
@@ -56,3 +56,8 @@ def write_replay(
                 time.sleep(chunk_s / speed)
 
     return dest_bin
+
+
+def replay_path(source: str | Path, destination: str | Path) -> Path:
+    """Path that :func:`write_replay` will write for this source."""
+    return Path(destination) / Path(source).with_suffix(".bin").name

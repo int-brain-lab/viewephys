@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import tempfile
-import threading
-import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -85,14 +82,6 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         )
         self.menuOpen.addAction("NWB", lambda checked=False: self.open_nwb())
 
-        # replay submenu
-        self.actionreplay = self.menuFile.addAction(
-            "replay SpikeGLX", lambda checked=False: self.start_replay()
-        )
-        self._replay_stop: threading.Event | None = None
-        self._replay_dir: tempfile.TemporaryDirectory | None = None
-        self._replay_thread: threading.Thread | None = None
-
         # probe menu
         self.menuProbe = self.menubar.addMenu("Probe")
         self.action_load_probe = self.menuProbe.addAction(
@@ -157,8 +146,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         :param live: Whether the binary file is currently being recorded in SpileGLX
         :param file: Full filepath to the file to open.
         """
-        if not live:
-            self._stop_replay()
+
         if file is None:
             file, _ = QtWidgets.QFileDialog.getOpenFileName(
                 parent=self,
@@ -267,68 +255,6 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 return
         raw = se.read_nwb_recording(file, electrical_series_path=selected_path)
         self._show_spikeinterface(raw)
-
-    def start_replay(
-        self, source: str | Path | None = None, speed: float = 1.0
-    ) -> None:
-        """Replay a SpikeGLX recording as if it were being acquired live."""
-        from viewephys.replay import write_replay
-
-        self._stop_replay()
-
-        if source is None:
-            source, _ = QtWidgets.QFileDialog.getOpenFileName(
-                self, "Select SpikeGLX file", "", "SpikeGLX (*.bin *.cbin)"
-            )
-            if not source:
-                return
-        source = Path(source)
-        self._replay_dir = tempfile.TemporaryDirectory(
-            prefix="viewephys_replay_", ignore_cleanup_errors=True
-        )
-        destination = Path(self._replay_dir.name)
-
-        self._replay_stop = threading.Event()
-        thread = threading.Thread(
-            target=write_replay,
-            args=(source, destination),
-            kwargs={
-                "speed": speed,
-                "chunk_s": QT_TIMER_INTERVAL / 1000.0,
-                "stop": self._replay_stop,
-            },
-            daemon=True,
-        )
-
-        self._replay_thread = thread
-        thread.start()
-        dest_bin = destination / source.with_suffix(".bin").name
-        for _ in range(100):
-            if dest_bin.exists() and dest_bin.stat().st_size > 0:
-                break
-            time.sleep(0.1)
-        else:
-            self._stop_replay()
-            QtWidgets.QMessageBox.critical(
-                self, "Replay", "The replay did not start writing."
-            )
-            return
-        self.open_file(file=dest_bin, live=True)
-
-    def _stop_replay(self) -> None:
-        """Stop running a replay, if any, and remove its temporary folder."""
-        self._live_timer.stop()
-        if self._replay_stop is not None:
-            self._replay_stop.set()
-            self._replay_stop = None
-        if self._replay_thread is not None:
-            self._replay_thread.join(timeout=5)
-            self._replay_thread = None
-        if self._replay_dir is not None:
-            if hasattr(self, "data") and hasattr(self.data, "sr"):
-                self.data.sr.close()
-            self._replay_dir.cleanup()
-            self._replay_dir = None
 
     def load_probe_from_library(self):
         """Select probe from probeinterface library and attach to recording"""
@@ -685,7 +611,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         this window, Qt will automatically handle the window close.
         """
         # self.viewers only exists once a file has been opened.
-        self._stop_replay()
+        self._live_timer.stop()
         for ev in getattr(self, "viewers", {}).values():
             if ev is not None:
                 ev.close()
