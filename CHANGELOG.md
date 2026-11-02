@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-02
+
 ### added
 - `File > open` is now a submenu with SpikeGLX, Open Ephys, and NWB options. Open Ephys recording folders are read through SpikeInterface. User selects `structure.oebin` file and is prompted to select data stream to view, which is shown as raw and high-passed (300 Hz).
 - `File > open > NWB` to load an NWB file. The electrical series to display is chosen from a drop-down when the file holds several.
