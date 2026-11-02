@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import partial
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -95,6 +96,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.horizontalSlider.setSingleStep(1)
         self.horizontalSlider.setTickInterval(10)
         self._first_sample = 0
+        # ticking a pre-built (IBL pipeline) checkbox displays that step right away
+        for step, cb in {
+            "raw": self.cb_raw_ap,
+            "butterworth": self.cb_butterworth_ap,
+            "broadband": self.cb_butterworth_lf,
+            "destripe": self.cb_destripe_ap,
+        }.items():
+            cb.toggled.connect(partial(self._on_step_toggled, step))
         self.horizontalSlider.sliderReleased.connect(self.on_horizontalSliderReleased)
         self.horizontalSlider.valueChanged.connect(self.on_horizontalSliderValueChanged)
         validator = QtGui.QDoubleValidator(0.0, 1e12, 6, self.lineEdit_jumpTime)
@@ -386,6 +395,22 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 layout.addWidget(cb)
                 self.cbs[step] = cb
                 self._dynamic_cbs.append(cb)
+                cb.toggled.connect(partial(self._on_step_toggled, step))
+
+    def _on_step_toggled(self, step: str, checked: bool) -> None:
+        """Display a preprocessing step as soon as its checkbox is ticked.
+
+        Does nothing when unticked, or when no dataset is loaded yet.
+
+        Parameters
+        ----------
+        step : str
+            Preprocessing step name, key of ``self.viewers``.
+        checked : bool
+            New state of the checkbox.
+        """
+        if checked and self.horizontalSlider.isEnabled() and step in self.viewers:
+            self.on_horizontalSliderReleased(steps=[step])
 
     def _create_top_label(self):
         """Create the label of recording details shown on the main window."""
@@ -496,8 +521,16 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self._update_time_label()
         self.on_horizontalSliderReleased(center_time=center_time)
 
+    def _raise_on_escape(self, key: int) -> None:
+        """Bring this window to the top when Escape is pressed in a viewer window."""
+        if key == QtCore.Qt.Key_Escape:
+            self.raise_()
+            self.activateWindow()
+
     def on_horizontalSliderReleased(  # noqa: C901
-        self, center_time: float | None = None
+        self,
+        center_time: float | None = None,
+        steps: Sequence[str] | None = None,
     ) -> None:
         """
         Open EphysViewer windows at the selected timepoint
@@ -510,6 +543,13 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         Depending on the selected preprocessing steps, open a number of
         viewers (one for each selected preprocessing step) to display the
         preprocessed data at the selected timepoint.
+
+        Parameters
+        ----------
+        center_time : float, optional
+            Absolute time to center the preserved zoom on (jump requests).
+        steps : sequence of str, optional
+            Restrict the (re)loading to these steps, default is all the steps.
         """
         # Capture current zoom per visible viewer so we can restore it after the reload.
         prev_ranges: dict[str, tuple[list[float], list[float]] | None] = {}
@@ -531,7 +571,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         raw = self.data.get_raw(first, last)
 
         # For each preprocessing step, create an EphysViewer
-        for k in self.viewers:
+        for k in steps if steps is not None else self.viewers:
             if not self.cbs[k].isChecked():
                 continue
 
@@ -556,6 +596,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                     sort_keys.append("shank")
                 viewer.ctrl.sort(sort_keys)
 
+            if viewer is not self.viewers[k]:  # new window, reused ones are connected
+                # Escape in a viewer window brings this controlling window to the top
+                viewer.keyPressed.connect(self._raise_on_escape)
             self.viewers[k] = viewer
 
             prev = prev_ranges.get(k)
