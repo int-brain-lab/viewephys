@@ -521,6 +521,12 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self._update_time_label()
         self.on_horizontalSliderReleased(center_time=center_time)
 
+    def _raise_on_escape(self, key: int) -> None:
+        """Bring this window to the top when Escape is pressed in a viewer window."""
+        if key == QtCore.Qt.Key_Escape:
+            self.raise_()
+            self.activateWindow()
+
     def on_horizontalSliderReleased(  # noqa: C901
         self,
         center_time: float | None = None,
@@ -590,6 +596,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                     sort_keys.append("shank")
                 viewer.ctrl.sort(sort_keys)
 
+            if viewer is not self.viewers[k]:  # new window, reused ones are connected
+                # Escape in a viewer window brings this controlling window to the top
+                viewer.keyPressed.connect(self._raise_on_escape)
             self.viewers[k] = viewer
 
             prev = prev_ranges.get(k)
