@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-02
+
 ### added
 - `File > open` is now a submenu with SpikeGLX, Open Ephys, and NWB options. Open Ephys recording folders are read through SpikeInterface. User selects `structure.oebin` file and is prompted to select data stream to view, which is shown as raw and high-passed (300 Hz).
 - `File > open > NWB` to load an NWB file. The electrical series to display is chosen from a drop-down when the file holds several.
@@ -10,6 +12,7 @@
 - `Probe > Load from probeinterface library` menu to attach a probe geometry, chosen by manufacturer and model, to a loaded spikeinterface recording.
 
 ### fixed
+- Ticking a preprocessing step now displays it immediately; Escape in a viewer window raises the bin viewer; Shift+P tiles the windows
 - Wiggle display mode now respects channel sorting and tracks scrollbar movement after zooming in/out
 - ctrl+P propagation no longer detaches the top/side header axes: the header viewboxes are now linked *to* the seismic view instead of the reverse, freeing the seismic viewbox's single X/Y link slots for cross-window linking. Panning/zooming any linked window now keeps every window's main plot and header strips in sync
 - `EasyQC._instances()` now skips wrappers whose C++ object has been deleted, so window lookup and ctrl+P propagation no longer raise a `RuntimeError` when a stale window lingers

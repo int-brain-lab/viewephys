@@ -214,6 +214,7 @@ class _FakeViewer:
     def __init__(self, xlim=None, view_range=None):
         self.viewBox_seismic = _FakeViewBox(view_range=view_range)
         self.ctrl = _FakeCtrl(xlim or [0.0, 1.0])
+        self.keyPressed = Mock()
 
     def isVisible(self):
         return True

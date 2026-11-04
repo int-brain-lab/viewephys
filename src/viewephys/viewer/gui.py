@@ -589,24 +589,73 @@ class Controller(abc.ABC):
     def get_max_time(self):
         return self.model.nx
 
+    @staticmethod
+    def tile_rects(n, area):
+        """
+        Compute screen rectangles to tile `n` windows within `area`.
+
+        Parameters
+        ----------
+        n : int
+            Number of windows to place.
+        area : QtCore.QRect
+            Available screen geometry.
+
+        Returns
+        -------
+        list of QtCore.QRect or None
+            2 or 3 windows are placed side by side, 4 in a 2x2 grid. `None` for any
+            other count, where no sensible layout exists.
+        """
+        if n in (2, 3):
+            ncols, nrows = n, 1
+        elif n == 4:
+            ncols, nrows = 2, 2
+        else:
+            return None
+        w, h = area.width() // ncols, area.height() // nrows
+        return [
+            QtCore.QRect(area.x() + (i % ncols) * w, area.y() + (i // ncols) * h, w, h)
+            for i in range(n)
+        ]
+
     def propagate(self, explode=False):
-        eqcs = self.view._instances()
-        if len(eqcs) == 1:
+        """
+        Copy colormap, gain, sort and axis links from this window to all the others.
+
+        Parameters
+        ----------
+        explode : bool
+            If True, tile the windows on the current screen (side by side for 2-3
+            windows, 2x2 grid for 4). Otherwise, other windows take this window's
+            geometry.
+        """
+        # closed windows are only hidden, not deleted: ignore them
+        others = [
+            e for e in self.view._instances() if e.isVisible() and e is not self.view
+        ]
+        if not others:
             return
-        for i, eqc in enumerate(eqcs):
-            if eqc is self.view:
-                continue
+        for eqc in others:
             eqc.setColorMap(self.view.imageItem_seismic.getColorMap() or "CET-D1")
-            eqc.setGeometry(self.view.geometry())
             eqc.ctrl.set_gain(self.gain)
             eqc.plotItem_seismic.setXLink(self.view.plotItem_seismic)
             eqc.plotItem_seismic.setYLink(self.view.plotItem_seismic)
             eqc.lineEdit_sort.setText(self.view.lineEdit_sort.text())
             eqc.ctrl.sort(eqc.lineEdit_sort.text())
-            if explode and i % 2 == 1:
-                rect = self.view.geometry()
-                rect.translate(rect.width(), 0)
-                eqc.setGeometry(rect)
+            eqc.setGeometry(self.view.geometry())
+        if explode:
+            windows = [self.view, *others]
+            screen = self.view.screen() or QtWidgets.QApplication.primaryScreen()
+            rects = self.tile_rects(len(windows), screen.availableGeometry())
+            if rects is None:
+                return
+            for win, rect in zip(windows, rects, strict=True):
+                # maximized / full-screen windows ignore setGeometry (notably on macOS)
+                if win.isMaximized() or win.isFullScreen():
+                    win.showNormal()
+                win.setGeometry(rect)
+                win.raise_()
 
     def auto_gain(self):
         rmsnan = np.nansum(self.model.data**2, axis=self.model.taxis) / np.sum(
