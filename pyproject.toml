@@ -52,6 +52,7 @@ Homepage = "https://github.com/int-brain-lab/viewephys"
 
 [project.scripts]
 viewephys = "viewephys.command_line:viewephys"
+viewephys-replay = "viewephys.command_line:replay"
 
 [tool.pdm]
 package-dir = "src"
