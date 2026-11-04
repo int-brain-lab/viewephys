@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 def write_replay(
     source: str | Path,
-    destination: str | Path,
+    destination: str | Path | None = None,
     speed: float = 1.0,
     chunk_s: float = 0.25,
     stop: threading.Event | None = None,
@@ -27,7 +27,8 @@ def write_replay(
 
     Args:
         source (str | Path): Source .bin file to write
-        destination (str | Path): Destination directory to write to
+        destination (str | Path, optional): Destination directory to write to.
+            Defaults to a `replay` subfolder next to the source.
         speed (float, optional): Speed of writing. Defaults to 1.0.
         chunk_s (float, optional): Chunk size in seconds. Defaults to 1.0.
         stop (threading.Event | None, optional): Event to signal stopping.
@@ -35,29 +36,40 @@ def write_replay(
 
     Returns:
         dest_bin: Path to written file
+
+    Raises:
+        ValueError: If the destination file is the source file, which would truncate it.
     """
     source = Path(source)
     meta = source.with_suffix(".meta")
-    destination = Path(destination)
+    dest_bin = replay_path(source, destination)
+    destination = dest_bin.parent
+    if dest_bin.resolve() == source.resolve():
+        raise ValueError(f"destination would overwrite the source file: {source}")
     destination.mkdir(parents=True, exist_ok=True)
 
     sr = spikeglx.Reader(source)
-    dest_bin = replay_path(source, destination)
     shutil.copy(meta, destination / meta.name)
 
     chunk = int(sr.fs * chunk_s)
+    t0 = time.monotonic()
     with open(dest_bin, "wb") as f:
-        for start in range(0, sr.ns, chunk):
+        for i, start in enumerate(range(0, sr.ns, chunk), 1):
             if stop is not None and stop.is_set():
                 break
             f.write(sr._raw[start : start + chunk].tobytes())
             f.flush()
-            if speed > 0:
-                time.sleep(chunk_s / speed)
+            if (
+                speed > 0
+            ):  # sleep until the chunk's target time, so write time doesn't accumulate
+                time.sleep(max(0.0, t0 + i * chunk_s / speed - time.monotonic()))
 
     return dest_bin
 
 
-def replay_path(source: str | Path, destination: str | Path) -> Path:
+def replay_path(source: str | Path, destination: str | Path | None = None) -> Path:
     """Path that :func:`write_replay` will write for this source."""
-    return Path(destination) / Path(source).with_suffix(".bin").name
+    source = Path(source)
+    return (
+        Path(destination or source.parent / "replay") / source.with_suffix(".bin").name
+    )

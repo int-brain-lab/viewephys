@@ -34,10 +34,9 @@ def test_replay_writes_to_out_dir(source_bin, tmp_path, monkeypatch, capsys):
     assert str(dest) in capsys.readouterr().out
 
 
-def test_replay_default_out_dir(source_bin, tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+def test_replay_default_out_dir(source_bin, monkeypatch):
     _run(monkeypatch, source_bin, "--speed", 0)
-    assert (tmp_path / "rec_replay" / "rec.ap.bin").exists()
+    assert (source_bin.parent / "replay" / "rec.ap.bin").exists()
 
 
 def test_replay_missing_source(tmp_path, monkeypatch, capsys):
@@ -60,3 +59,11 @@ def test_write_replay_stops_on_event(source_bin, tmp_path):
     stop.set()
     dest = write_replay(source_bin, tmp_path / "out", speed=0, stop=stop)
     assert dest.stat().st_size == 0
+
+
+def test_write_replay_refuses_to_overwrite_source(source_bin):
+    """Also covers the CLI, which relies on write_replay raising."""
+    size = source_bin.stat().st_size
+    with pytest.raises(ValueError, match="overwrite"):
+        write_replay(source_bin, source_bin.parent, speed=0)
+    assert source_bin.stat().st_size == size

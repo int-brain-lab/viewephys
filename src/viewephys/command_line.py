@@ -60,7 +60,7 @@ def replay():
         "-o",
         "--out",
         default=None,
-        help="destination directory (default: ./<name>_replay)",
+        help="destination directory (default: a `replay` subfolder next to the source)",
     )
     parser.add_argument(
         "--speed",
@@ -80,21 +80,11 @@ def replay():
     source = Path(args.source).resolve()
     if not source.exists():
         parser.error(f"no such file: {source}")
-    destination = (
-        Path(args.out)
-        if args.out
-        else (Path.cwd() / f"{source.name.split('.')[0]}_replay")
-    )
-    destination = (
-        Path(args.out)
-        if args.out
-        else (Path.cwd() / f"{source.name.split('.')[0]}_replay")
-    )
     print(f"replaying {source}")
     print("open this file in the GUI with File > open live recording:")
-    print(f"  {replay_path(source, destination)}")
+    print(f"  {replay_path(source, args.out)}")
     try:
-        write_replay(source, destination, speed=args.speed, chunk_s=args.chunk_s)
+        write_replay(source, args.out, speed=args.speed, chunk_s=args.chunk_s)
     except KeyboardInterrupt:
         print("\nreplay interrupted")
         return

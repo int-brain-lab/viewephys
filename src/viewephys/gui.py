@@ -29,7 +29,8 @@ T_SCALAR = 1  # defaults s for user side
 A_SCALAR = 1e6  # defaults V for user side
 N_SAMPLES_INIT = 2000  # number of samples in the manual pick array
 HIGHPASS_HZ = 300.0  # high-pass cutoff frequency (Hz) for SpikeInterface Recordings
-QT_TIMER_INTERVAL = 250  # ms between live data refreshes
+QT_TIMER_INTERVAL = 250  # ms between live file re-reads (slider range update)
+LOCK_LATEST_INTERVAL = 5000  # ms between view refreshes when locked to the latest data
 
 PICK_COLOR = (0, 255, 255)
 
@@ -121,6 +122,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self._live_timer = QtCore.QTimer(self)
         self._live_timer.setInterval(QT_TIMER_INTERVAL)
         self._live_timer.timeout.connect(self._on_live_tick)
+        self._lock_timer = QtCore.QTimer(self)
+        self._lock_timer.setInterval(LOCK_LATEST_INTERVAL)
+        self._lock_timer.timeout.connect(self._jump_to_latest)
+        self.checkBox_lockLatest = QtWidgets.QCheckBox(
+            "Lock to latest (refresh every 5 s)", self.groupBox_2
+        )
+        self.checkBox_lockLatest.setEnabled(False)  # only for live recordings
+        self.checkBox_lockLatest.toggled.connect(self.on_lockLatestToggled)
+        self.gridLayout_3.addWidget(self.checkBox_lockLatest, 5, 0, 1, 2)
         self.show()
 
         self.data: SpikeGLXDataModel | SpikeInterfaceDataModel
@@ -173,9 +183,13 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             self._live_timer.start()
         else:
             self._live_timer.stop()
+            self.checkBox_lockLatest.setChecked(False)
+        self.checkBox_lockLatest.setEnabled(live)
 
         self._setup_viewers_and_checkboxes()
         self._setup_slider()
+        if self.checkBox_lockLatest.isChecked():
+            self._jump_to_latest()
 
     def open_openephys(self, file: str | Path | None = None) -> None:
         """Open Ephys specific loader"""
@@ -349,10 +363,22 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.data = SpikeGLXDataModel(sr)
 
     def _on_live_tick(self) -> None:
+        """Re-read the growing file and extend the slider range, keeping the view."""
         if self._path is None:
             return
         self._open_path(self._path, live=True)
         self.update_slider_limits()
+
+    def on_lockLatestToggled(self, checked: bool) -> None:
+        """Start or stop refreshing the view on the latest data of a live recording."""
+        if checked:
+            self._lock_timer.start()
+            self._jump_to_latest()
+        else:
+            self._lock_timer.stop()
+
+    def _jump_to_latest(self) -> None:
+        """Move the slider and the displayed window to the end of the recording."""
         n = self.data.get_num_samples()
         self._first_sample = max(0, n - self.window_length_n)
         self.horizontalSlider.blockSignals(True)
@@ -612,6 +638,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         """
         # self.viewers only exists once a file has been opened.
         self._live_timer.stop()
+        self._lock_timer.stop()
         for ev in getattr(self, "viewers", {}).values():
             if ev is not None:
                 ev.close()

@@ -781,3 +781,30 @@ def test_auto_downsample_toggles_view_item(view_with_data):
     window.actionAutoDownsample.setChecked(True)
     assert window._auto_downsample is True
     assert window.imageItem_seismic.autoDownsample is True
+
+
+def test_live_lock_to_latest(qtbot, monkeypatch, tmp_path):
+    """The live timer only extends the slider; the checkbox locks the view to the end"""
+    from spikeglx import _mock_spikeglx_file
+
+    meta = Path(__file__).parent / "mock_data" / "meta_file.meta"
+    info = _mock_spikeglx_file(tmp_path / "rec.ap.bin", meta, 40000, 385)
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window, "on_horizontalSliderReleased", lambda **kw: None)
+    window.open_file(file=info["bin_file"], live=True)
+    assert window.checkBox_lockLatest.isEnabled()
+    assert not window._lock_timer.isActive()
+
+    # a tick re-reads the file and extends the range but does not move the view
+    window._on_live_tick()
+    assert window._first_sample == 0
+
+    window.checkBox_lockLatest.setChecked(True)
+    assert window._lock_timer.isActive()
+    n = window.data.get_num_samples()
+    assert window._first_sample == max(0, n - window.window_length_n)
+
+    window.checkBox_lockLatest.setChecked(False)
+    assert not window._lock_timer.isActive()
+    window.close()
