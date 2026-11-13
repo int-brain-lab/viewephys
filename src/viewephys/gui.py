@@ -23,6 +23,12 @@ from viewephys.data_model import (
     SpikeGLXDataModel,
     SpikeInterfaceDataModel,
 )
+from viewephys.noise import (
+    array_dc_offset,
+    array_rms,
+    summarize_dc_offset,
+    summarize_rms,
+)
 from viewephys.viewer.gui import EasyQC
 from viewephys.viewer.qt import create_app
 
@@ -140,6 +146,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.checkBox_lockLatest.setEnabled(False)  # only for live recordings
         self.checkBox_lockLatest.toggled.connect(self.on_lockLatestToggled)
         self.gridLayout_3.addWidget(self.checkBox_lockLatest, 5, 0, 1, 2)
+        # Noise (RMS per displayed step) and raw DC offset of the current window
+        self.label_noise = QtWidgets.QLabel("", self.groupBox_2)
+        self.gridLayout_3.addWidget(self.label_noise, 6, 0, 1, 2)
+        self._rms_by_step: dict[str, pd.DataFrame] = {}
+        self._dc_df: pd.DataFrame | None = None
         self.show()
 
         self.data: SpikeGLXDataModel | SpikeInterfaceDataModel
@@ -414,6 +425,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
     def _setup_viewers_and_checkboxes(self) -> None:
         """Repopulate viewers/cbs based on the current data model."""
         self.viewers: dict[str, EphysViewer | None]
+        self._rms_by_step = {}
+        self._dc_df = None
+        self.label_noise.setText("")
 
         # Pre-built descriptive checkboxes for the IBL SpikeGLX pipeline.
         ibl_cbs = {
@@ -452,7 +466,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
     def _on_step_toggled(self, step: str, checked: bool) -> None:
         """Display a preprocessing step as soon as its checkbox is ticked.
 
-        Does nothing when unticked, or when no dataset is loaded yet.
+        When unticked, the step's noise results are dropped from the display
+        (and the step is not recomputed). Does nothing when no dataset is
+        loaded yet.
 
         Parameters
         ----------
@@ -461,8 +477,38 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         checked : bool
             New state of the checkbox.
         """
+        if not checked:
+            self._rms_by_step.pop(step, None)
+            self._update_noise_label()
+            return
         if checked and self.horizontalSlider.isEnabled() and step in self.viewers:
             self.on_horizontalSliderReleased(steps=[step])
+
+    def _update_noise_label(self) -> None:
+        """Show per-step RMS of the displayed window and raw DC offset stats.
+
+        Only the steps currently ticked are shown; the DC offset is always
+        computed on the raw data of the current window.
+        """
+        lines = []
+        if self._rms_by_step:
+            summary = summarize_rms(
+                pd.concat(self._rms_by_step.values(), ignore_index=True)
+            )
+            for row in summary.itertuples():
+                lines.append(
+                    f"RMS {row.step}: mean {row.mean_rms_uv:0.2f} uV, "
+                    f"MAD {row.mad_rms_volts * 1e6:0.2f} uV"
+                )
+        if self._dc_df is not None:
+            dc = summarize_dc_offset(self._dc_df).iloc[0]
+            lines.append(
+                f"DC offset (raw): median {dc.median_dc_uv:0.2f} uV, "
+                f"min {dc.min_dc_volts * 1e6:0.2f} uV, "
+                f"max {dc.max_dc_volts * 1e6:0.2f} uV, "
+                f"MAD {dc.mad_dc_volts * 1e6:0.2f} uV"
+            )
+        self.label_noise.setText("\n".join(lines))
 
     def _create_top_label(self):
         """Create the label of recording details shown on the main window."""
@@ -628,6 +674,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 continue
 
             data = self.data.get_data(first, last, k, raw=raw)
+            # RMS of the displayed step on the current window; steps that are
+            # not ticked are never computed here nor shown in the label
+            self._rms_by_step[k] = array_rms(
+                data,
+                step=k,
+                start_sample=first,
+                end_sample=last,
+                fs=self.data.get_sampling_frequency(),
+            )
 
             viewer = viewephys(
                 data,
@@ -671,6 +726,21 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                     new_x1 = new_x0 + width
                 viewer.viewBox_seismic.setXRange(new_x0, new_x1, padding=0)
                 viewer.viewBox_seismic.setYRange(yr_prev[0], yr_prev[1], padding=0)
+
+        # DC offset is always computed on the raw data of the current window
+        # (None for models that carry no raw signal, e.g. SpikeInterface)
+        if raw is not None:
+            self._dc_df = array_dc_offset(
+                raw,
+                start_sample=first,
+                end_sample=last,
+                fs=self.data.get_sampling_frequency(),
+            )
+        # Drop noise results of steps that are no longer displayed
+        for k in list(self._rms_by_step):
+            if not self.cbs[k].isChecked():
+                del self._rms_by_step[k]
+        self._update_noise_label()
 
     def closeEvent(self, event: QtGui.QCloseEvent | None) -> None:
         """
