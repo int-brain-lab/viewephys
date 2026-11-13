@@ -495,18 +495,18 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             summary = summarize_rms(
                 pd.concat(self._rms_by_step.values(), ignore_index=True)
             )
-            for row in summary.itertuples():
+            for row in summary.to_dict("records"):
                 lines.append(
-                    f"RMS {row.step}: mean {row.mean_rms_uv:0.2f} uV, "
-                    f"MAD {row.mad_rms_volts * 1e6:0.2f} uV"
+                    f"RMS {row['step']}: mean {row['mean_rms_uv']:0.2f} uV, "
+                    f"MAD {row['mad_rms_volts'] * 1e6:0.2f} uV"
                 )
         if self._dc_df is not None:
-            dc = summarize_dc_offset(self._dc_df).iloc[0]
+            dc = summarize_dc_offset(self._dc_df).to_dict("records")[0]
             lines.append(
-                f"DC offset (raw): median {dc.median_dc_uv:0.2f} uV, "
-                f"min {dc.min_dc_volts * 1e6:0.2f} uV, "
-                f"max {dc.max_dc_volts * 1e6:0.2f} uV, "
-                f"MAD {dc.mad_dc_volts * 1e6:0.2f} uV"
+                f"DC offset (raw): median {dc['median_dc_uv']:0.2f} uV, "
+                f"min {dc['min_dc_volts'] * 1e6:0.2f} uV, "
+                f"max {dc['max_dc_volts'] * 1e6:0.2f} uV, "
+                f"MAD {dc['mad_dc_volts'] * 1e6:0.2f} uV"
             )
         self.label_noise.setText("\n".join(lines))
 
