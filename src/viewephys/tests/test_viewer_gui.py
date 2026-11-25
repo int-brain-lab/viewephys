@@ -546,6 +546,44 @@ def test_lfpack_recording_selector_searchable(qtbot, monkeypatch, tmp_path):
     window.deleteLater()
 
 
+def test_lfpack_menu_action_conditional_on_dependency(qtbot, monkeypatch):
+    """The open menu shows the LFPack entry only when lfpack is installed."""
+    import viewephys.gui as gui_mod
+
+    monkeypatch.setattr(gui_mod, "_lfpack_available", lambda: True)
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+    labels = [a.text() for a in window.menuOpen.actions()]
+    assert "LFPack (HDF5)" in labels
+    window.close()
+    window.deleteLater()
+
+    monkeypatch.setattr(gui_mod, "_lfpack_available", lambda: False)
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+    labels = [a.text() for a in window.menuOpen.actions()]
+    assert "LFPack (HDF5)" not in labels
+    window.close()
+    window.deleteLater()
+
+
+def test_base_viewer_open_lfpack(qtbot, monkeypatch, tmp_path):
+    """The base EphysBinViewer loads an .h5 through open_lfpack (no --lfpack needed)."""
+    pytest.importorskip("lfpack")
+    h5 = build_lfpack_h5(tmp_path / "lf.h5", "uuid-aaaa", nc=64, ns=6000)
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+    # Suppress viewer spawning so tests stay light and headless-safe.
+    monkeypatch.setattr(
+        window, "on_horizontalSliderReleased", lambda center_time=None: None
+    )
+    window.open_lfpack(file=h5)
+    assert isinstance(window.data, LFPackDataModel)
+
+    window.close()
+    window.deleteLater()
+
+
 def test_open_openephys(qtbot, monkeypatch, tmp_path):
     import spikeinterface.core as si_core
     import spikeinterface.extractors as se
