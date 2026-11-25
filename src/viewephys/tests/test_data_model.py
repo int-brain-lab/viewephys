@@ -128,6 +128,12 @@ class TestLFPackDataModel:
         bpr = model.get_data(0, 500, "bpr")
         assert bpr.shape == (64, 500)
         assert np.isfinite(bpr).all()
+        # Display-only steps are RMS-matched to the raw window.
+        raw_w = model.get_raw(0, 500)
+        rms_raw = np.sqrt(np.mean(raw_w.astype(np.float64) ** 2))
+        for step in ("bpr", "csd"):
+            out = model.get_data(0, 500, step, raw=raw_w)
+            assert np.sqrt(np.nanmean(out**2)) == pytest.approx(rms_raw, rel=1e-5)
         # Header carries col/row so current_source_density has the layout.
         assert "col" in header and "row" in header
 

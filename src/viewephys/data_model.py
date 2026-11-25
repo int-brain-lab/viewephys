@@ -236,17 +236,22 @@ class LFPackDataModel(SpikeGLXDataModel):
         ``"bpr"`` and ``"csd"`` are spatial derivatives of the raw signal via
         :func:`ibldsp.voltage.current_source_density`: first difference with
         sigma=1 for the bipolar reference, second difference with sigma=-1/3
-        (tissue conductivity, with the physical minus sign) for the CSD.
-        Other steps defer to the inherited (raw pass-through) implementation.
+        (tissue conductivity, with the physical minus sign) for the CSD.  Both
+        are rescaled to the raw window's RMS, as they are display-only steps:
+        flipping between processing domains needs no gain change.  Other steps
+        defer to the inherited (raw pass-through) implementation.
         """
         if step not in ("bpr", "csd"):
             return super().get_data(start_sample, end_sample, step, raw=raw)
         if raw is None:
             raw = self.get_raw(start_sample, end_sample)
         n, sigma = (1, 1.0) if step == "bpr" else (2, -1 / 3)
-        return voltage.current_source_density(
-            raw, h=self.get_header(), n=n, sigma=sigma
-        )
+        out = voltage.current_source_density(raw, h=self.get_header(), n=n, sigma=sigma)
+        rms_raw = np.sqrt(np.mean(raw.astype(np.float64) ** 2))
+        rms_out = np.sqrt(np.nanmean(out.astype(np.float64) ** 2))
+        if rms_out > 0:
+            out = out * (rms_raw / rms_out)
+        return out
 
     @override
     def get_probe_information(self) -> str:
