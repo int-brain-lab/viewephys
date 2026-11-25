@@ -477,7 +477,7 @@ def test_lfpack_single_recording_opens(qtbot, monkeypatch, tmp_path):
     window = _open_lfpack_window(qtbot, monkeypatch, h5)
 
     assert isinstance(window.data, LFPackDataModel)
-    assert list(window.cbs) == ["raw", "csd"]
+    assert list(window.cbs) == ["raw", "bpr", "csd"]
     # No recording selector for single-recording files.
     assert not (
         hasattr(window, "groupBox_recording") and window.groupBox_recording.isVisible()
@@ -565,6 +565,17 @@ def test_lfpack_menu_action_conditional_on_dependency(qtbot, monkeypatch):
     assert "LFPack (HDF5)" not in labels
     window.close()
     window.deleteLater()
+
+
+def test_upsample_fft_zero_pads_spectrum():
+    """FFT zero-padding upsamples x3 and passes through the original samples."""
+    from viewephys.gui import _upsample_fft
+
+    rng = np.random.default_rng(0)
+    x = rng.standard_normal((4, 100)).astype(np.float32)
+    up = _upsample_fft(x, 3)
+    assert up.shape == (4, 300)
+    np.testing.assert_allclose(up[:, ::3], x, atol=1e-5)
 
 
 def test_base_viewer_open_lfpack(qtbot, monkeypatch, tmp_path):

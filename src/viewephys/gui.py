@@ -64,6 +64,20 @@ def _lfpack_available() -> bool:
         return False
 
 
+UPSAMPLE_FACTOR = 3  # display-only temporal upsampling factor
+
+
+def _upsample_fft(x: np.ndarray, factor: int = UPSAMPLE_FACTOR) -> np.ndarray:
+    """Band-limited temporal upsampling by zero-padding the FFT (display only)."""
+    n = x.shape[-1]
+    X = np.fft.fft(x, axis=-1)
+    k = (n + 1) // 2  # non-negative frequencies
+    Xup = np.zeros((*x.shape[:-1], n * factor), dtype=complex)
+    Xup[..., :k] = X[..., :k]
+    Xup[..., n * factor - (n - k) :] = X[..., k:]
+    return np.fft.ifft(Xup, axis=-1).real * factor
+
+
 class EphysBinViewer(QtWidgets.QMainWindow):
     def __init__(
         self, bin_file: str | Path | None = None, *args, **kwargs
@@ -103,6 +117,13 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             self.menuOpen.addAction(
                 "LFPack (HDF5)", lambda checked=False: self.open_lfpack()
             )
+
+        # display-only temporal upsampling, next to the preprocessing checkboxes
+        self.cb_upsample = QtWidgets.QCheckBox(
+            f"upsample x{UPSAMPLE_FACTOR}", self.select_recording_groupbox
+        )
+        self.select_recording_groupbox.layout().addWidget(self.cb_upsample)
+        self.cb_upsample.toggled.connect(self._on_upsample_toggled)
 
         # probe menu
         self.menuProbe = self.menubar.addMenu("Probe")
@@ -633,6 +654,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             )
         self.label_noise.setText("\n".join(lines))
 
+    def _on_upsample_toggled(self, checked: bool) -> None:
+        """Re-render the current window with/without temporal upsampling."""
+        if checked and hasattr(self, "viewers"):
+            self.on_horizontalSliderReleased()
+
     def _create_top_label(self):
         """Create the label of recording details shown on the main window."""
         file_path = self.data.get_file_path()
@@ -798,7 +824,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
             data = self.data.get_data(first, last, k, raw=raw)
             # RMS of the displayed step on the current window; steps that are
-            # not ticked are never computed here nor shown in the label
+            # not ticked are never computed here nor shown in the label.
+            # Computed on the step data itself, before any display-only
+            # upsampling.
             self._rms_by_step[k] = array_rms(
                 data,
                 step=k,
@@ -806,10 +834,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 end_sample=last,
                 fs=self.data.get_sampling_frequency(),
             )
+            fs = self.data.get_sampling_frequency()
+            if self.cb_upsample.isChecked():
+                data = _upsample_fft(data, UPSAMPLE_FACTOR)
+                fs *= UPSAMPLE_FACTOR
 
             viewer = viewephys(
                 data,
-                self.data.get_sampling_frequency(),
+                fs,
                 channels=self.data.get_header(),
                 br=self.data.get_brain_regions(),
                 title=k,

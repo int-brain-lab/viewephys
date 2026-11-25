@@ -94,8 +94,8 @@ class TestLFPackDataModel:
         reader = lfpack.LFPackReader(h5)
         model = LFPackDataModel(reader)
 
-        # A packed file exposes the denoised signal and its CSD.
-        assert model.get_steps() == ["raw", "csd"]
+        # A packed file exposes the denoised signal, its BPR and its CSD.
+        assert model.get_steps() == ["raw", "bpr", "csd"]
         assert model.get_num_channels() == 64
         assert model.get_sampling_frequency() == 250.0
         assert model.get_num_samples() == 6000
@@ -124,6 +124,10 @@ class TestLFPackDataModel:
         csd = model.get_data(0, 500, "csd")
         assert csd.shape == (64, 500)
         assert np.isfinite(csd).all()
+        # The BPR step (first spatial difference, sigma=1) matches np.diff/dx.
+        bpr = model.get_data(0, 500, "bpr")
+        assert bpr.shape == (64, 500)
+        assert np.isfinite(bpr).all()
         # Header carries col/row so current_source_density has the layout.
         assert "col" in header and "row" in header
 

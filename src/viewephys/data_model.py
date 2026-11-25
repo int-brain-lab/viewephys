@@ -211,16 +211,17 @@ class LFPackDataModel(SpikeGLXDataModel):
     """Data model for lfpack HDF5-packed LFP files.
 
     Wraps an ``lfpack.LFPackReader`` (a drop-in ``spikeglx.Reader``).  The data
-    is already decompressed and denoised, so the steps are the ``"raw"`` signal
-    and its current-source density (``"csd"``).  Most methods are inherited from
-    :class:`SpikeGLXDataModel`; only those relying on SpikeGLX metadata absent
-    from compressed files, or specific to lfpack, are overridden.
+    is already decompressed and denoised, so the steps are the ``"raw"`` signal,
+    its bipolar reference (``"bpr"``) and its current-source density (``"csd"``).
+    Most methods are inherited from :class:`SpikeGLXDataModel`; only those
+    relying on SpikeGLX metadata absent from compressed files, or specific to
+    lfpack, are overridden.
     """
 
     @override
     def get_steps(self) -> list[str]:
-        """Denoised signal and its current-source density."""
-        return ["raw", "csd"]
+        """Denoised signal, its bipolar reference and current-source density."""
+        return ["raw", "bpr", "csd"]
 
     @override
     def get_data(
@@ -230,17 +231,22 @@ class LFPackDataModel(SpikeGLXDataModel):
         step: str,
         raw: np.ndarray | None = None,
     ) -> np.ndarray:
-        """Return the raw signal or its current-source density.
+        """Return the raw signal, its bipolar reference or its CSD.
 
-        The ``"csd"`` step computes the CSD via
-        :func:`ibldsp.voltage.current_source_density`; other steps defer to the
-        inherited (raw pass-through) implementation.
+        ``"bpr"`` and ``"csd"`` are spatial derivatives of the raw signal via
+        :func:`ibldsp.voltage.current_source_density`: first difference with
+        sigma=1 for the bipolar reference, second difference with sigma=-1/3
+        (tissue conductivity, with the physical minus sign) for the CSD.
+        Other steps defer to the inherited (raw pass-through) implementation.
         """
-        if step != "csd":
+        if step not in ("bpr", "csd"):
             return super().get_data(start_sample, end_sample, step, raw=raw)
         if raw is None:
             raw = self.get_raw(start_sample, end_sample)
-        return voltage.current_source_density(raw, h=self.get_header())
+        n, sigma = (1, 1.0) if step == "bpr" else (2, -1 / 3)
+        return voltage.current_source_density(
+            raw, h=self.get_header(), n=n, sigma=sigma
+        )
 
     @override
     def get_probe_information(self) -> str:
