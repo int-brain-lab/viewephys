@@ -203,20 +203,26 @@ class EphysBinViewer(QtWidgets.QMainWindow):
     FILE_FILTER = "Electrophysiology files (*.*bin *.dat)"
 
     def open_file(
-        self, *args, live: bool = False, file: str | Path | dict | None = None
+        self,
+        *args,
+        live: bool = False,
+        file: str | Path | dict | None = None,
+        settings_key: str = "bin_file_path",
     ) -> None:
         """
         Open a SpikeGLX binary file.
 
         :param live: Whether the binary file is currently being recorded in SpileGLX
         :param file: Full filepath to the file to open.
+        :param settings_key: QSettings key holding the last directory used by
+            this loader, so each menu option remembers its own path.
         """
 
         if file is None:
             file, _ = QtWidgets.QFileDialog.getOpenFileName(
                 parent=self,
                 caption="Select Raw electrophysiology recording",
-                directory=self.settings.value("bin_file_path"),
+                directory=self.settings.value(settings_key),
                 filter=self.FILE_FILTER,
             )
             if file == "":
@@ -225,7 +231,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if isinstance(file, (str, Path)):
             file = Path(file)
             self._path = file
-            self.settings.setValue("bin_file_path", str(file.parent))
+            self.settings.setValue(settings_key, str(file.parent))
             self._open_path(file, live=live)
 
         elif isinstance(file, dict):
@@ -254,7 +260,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             file, _ = QtWidgets.QFileDialog.getOpenFileName(
                 self,
                 "Select Open Ephys structure.oebin",
-                "",
+                self.settings.value("openephys_path", ""),
                 "Open Ephys (structure.oebin)",
             )
 
@@ -262,6 +268,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 return
 
         folder = Path(file).parent
+        self.settings.setValue("openephys_path", str(folder))
 
         names, _ = se.get_neo_streams("openephysbinary", folder)
         name = names[0]
@@ -293,10 +300,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
         if file is None:
             file, _ = QtWidgets.QFileDialog.getOpenFileName(
-                self, "Select NWB file with electrical series", "", "*.nwb"
+                self,
+                "Select NWB file with electrical series",
+                self.settings.value("nwb_path", ""),
+                "*.nwb",
             )
             if not file:
                 return
+        self.settings.setValue("nwb_path", str(Path(file).parent))
         nwbre = se.nwbextractors.NwbRecordingExtractor
         available_paths = nwbre.fetch_available_electrical_series_paths(file)
         if not available_paths:
@@ -338,12 +349,12 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             file, _ = QtWidgets.QFileDialog.getOpenFileName(
                 parent=self,
                 caption="Select lfpack HDF5 recording",
-                directory=self.settings.value("bin_file_path"),
+                directory=self.settings.value("lfpack_path", ""),
                 filter="LFPack HDF5 files (*.h5 *.hdf5)",
             )
             if not file:
                 return
-        self.open_file(file=Path(file))
+        self.open_file(file=Path(file), settings_key="lfpack_path")
 
     def load_probe_from_library(self):
         """Select probe from probeinterface library and attach to recording"""

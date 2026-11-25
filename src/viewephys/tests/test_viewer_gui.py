@@ -567,6 +567,27 @@ def test_lfpack_menu_action_conditional_on_dependency(qtbot, monkeypatch):
     window.deleteLater()
 
 
+def test_last_path_saved_per_menu_option(qtbot, monkeypatch, tmp_path):
+    """Each loader stores its last directory under its own QSettings key.
+
+    Also proves settings are isolated per test: no other key is set even
+    though other tests opened SpikeGLX binaries in the same session.
+    """
+    pytest.importorskip("lfpack")
+    h5 = build_lfpack_h5(tmp_path / "lf.h5", "uuid-aaaa", nc=32, ns=4096)
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+    monkeypatch.setattr(
+        window, "on_horizontalSliderReleased", lambda center_time=None: None
+    )
+    window.open_lfpack(file=h5)
+    assert window.settings.value("lfpack_path") == str(tmp_path)
+    assert window.settings.value("bin_file_path") is None
+
+    window.close()
+    window.deleteLater()
+
+
 def test_upsample_fft_zero_pads_spectrum():
     """FFT zero-padding upsamples x3 and passes through the original samples."""
     from viewephys.gui import _upsample_fft
@@ -628,6 +649,7 @@ def test_open_openephys(qtbot, monkeypatch, tmp_path):
 
     assert calls == [(recording, "Rhythm Data")]
     assert list(window.cbs) == ["raw", "highpass"]
+    assert window.settings.value("openephys_path") == str(recording)
     window.close()
 
 
@@ -672,6 +694,7 @@ def test_open_nwb(qtbot, monkeypatch, tmp_path):
 
     assert calls == [(nwb_file, "series2")]
     assert list(window.cbs) == ["raw", "highpass"]
+    assert window.settings.value("nwb_path") == str(recording)
     window.close()
 
 
