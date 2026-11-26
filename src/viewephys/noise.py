@@ -394,9 +394,12 @@ def snippet_saturation(
         ``sampling_frequency``.
     """
     raw = data_model.get_raw(start_sample, end_sample)
+    range_volts = data_model.get_saturation_volts()
+    if range_volts is None:
+        raise ValueError("Data model does not provide per-channel saturation voltages.")
     return array_saturation(
         raw,
-        range_volts=data_model.get_range_volts(),
+        range_volts=range_volts,
         start_sample=start_sample,
         end_sample=end_sample,
         fs=data_model.get_sampling_frequency(),
