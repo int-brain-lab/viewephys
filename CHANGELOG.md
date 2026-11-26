@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-26
+
+### added
+- Noise module (RMS/DC offset) with stats shown in the main window (#69)
+- Conditional `File > open > LFPack (HDF5)` entry, shown when the optional `lfpack` dependency is installed
+- BPR/CSD preprocessing steps for LFPack recordings with display-only x3 temporal upsampling, RMS-matched to the raw window for display
+- Each open-menu loader remembers its last used directory
+
 ## [1.3.1] - 2026-11-02
 
 ### added
