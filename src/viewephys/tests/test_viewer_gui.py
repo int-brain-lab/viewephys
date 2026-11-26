@@ -477,7 +477,7 @@ def test_lfpack_single_recording_opens(qtbot, monkeypatch, tmp_path):
     window = _open_lfpack_window(qtbot, monkeypatch, h5)
 
     assert isinstance(window.data, LFPackDataModel)
-    assert list(window.cbs) == ["raw", "csd"]
+    assert list(window.cbs) == ["raw", "bpr", "csd"]
     # No recording selector for single-recording files.
     assert not (
         hasattr(window, "groupBox_recording") and window.groupBox_recording.isVisible()
@@ -546,6 +546,76 @@ def test_lfpack_recording_selector_searchable(qtbot, monkeypatch, tmp_path):
     window.deleteLater()
 
 
+def test_lfpack_menu_action_conditional_on_dependency(qtbot, monkeypatch):
+    """The open menu shows the LFPack entry only when lfpack is installed."""
+    import viewephys.gui as gui_mod
+
+    monkeypatch.setattr(gui_mod, "_lfpack_available", lambda: True)
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+    labels = [a.text() for a in window.menuOpen.actions()]
+    assert "LFPack (HDF5)" in labels
+    window.close()
+    window.deleteLater()
+
+    monkeypatch.setattr(gui_mod, "_lfpack_available", lambda: False)
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+    labels = [a.text() for a in window.menuOpen.actions()]
+    assert "LFPack (HDF5)" not in labels
+    window.close()
+    window.deleteLater()
+
+
+def test_last_path_saved_per_menu_option(qtbot, monkeypatch, tmp_path):
+    """Each loader stores its last directory under its own QSettings key.
+
+    Also proves settings are isolated per test: no other key is set even
+    though other tests opened SpikeGLX binaries in the same session.
+    """
+    pytest.importorskip("lfpack")
+    h5 = build_lfpack_h5(tmp_path / "lf.h5", "uuid-aaaa", nc=32, ns=4096)
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+    monkeypatch.setattr(
+        window, "on_horizontalSliderReleased", lambda center_time=None: None
+    )
+    window.open_lfpack(file=h5)
+    assert window.settings.value("lfpack_path") == str(tmp_path)
+    assert window.settings.value("bin_file_path") is None
+
+    window.close()
+    window.deleteLater()
+
+
+def test_upsample_fft_zero_pads_spectrum():
+    """FFT zero-padding upsamples x3 and passes through the original samples."""
+    from viewephys.gui import _upsample_fft
+
+    rng = np.random.default_rng(0)
+    x = rng.standard_normal((4, 100)).astype(np.float32)
+    up = _upsample_fft(x, 3)
+    assert up.shape == (4, 300)
+    np.testing.assert_allclose(up[:, ::3], x, atol=1e-5)
+
+
+def test_base_viewer_open_lfpack(qtbot, monkeypatch, tmp_path):
+    """The base EphysBinViewer loads an .h5 through open_lfpack (no --lfpack needed)."""
+    pytest.importorskip("lfpack")
+    h5 = build_lfpack_h5(tmp_path / "lf.h5", "uuid-aaaa", nc=64, ns=6000)
+    window = EphysBinViewer()
+    qtbot.addWidget(window)
+    # Suppress viewer spawning so tests stay light and headless-safe.
+    monkeypatch.setattr(
+        window, "on_horizontalSliderReleased", lambda center_time=None: None
+    )
+    window.open_lfpack(file=h5)
+    assert isinstance(window.data, LFPackDataModel)
+
+    window.close()
+    window.deleteLater()
+
+
 def test_open_openephys(qtbot, monkeypatch, tmp_path):
     import spikeinterface.core as si_core
     import spikeinterface.extractors as se
@@ -579,6 +649,7 @@ def test_open_openephys(qtbot, monkeypatch, tmp_path):
 
     assert calls == [(recording, "Rhythm Data")]
     assert list(window.cbs) == ["raw", "highpass"]
+    assert window.settings.value("openephys_path") == str(recording)
     window.close()
 
 
@@ -623,6 +694,7 @@ def test_open_nwb(qtbot, monkeypatch, tmp_path):
 
     assert calls == [(nwb_file, "series2")]
     assert list(window.cbs) == ["raw", "highpass"]
+    assert window.settings.value("nwb_path") == str(recording)
     window.close()
 
 

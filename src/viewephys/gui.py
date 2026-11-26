@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import partial
+from importlib.util import find_spec
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -55,6 +56,28 @@ SNS_PALETTE = [
 ]
 
 
+def _lfpack_available() -> bool:
+    """Whether the optional ``lfpack`` dependency is installed."""
+    try:
+        return find_spec("lfpack") is not None
+    except (ImportError, ValueError):
+        return False
+
+
+UPSAMPLE_FACTOR = 3  # display-only temporal upsampling factor
+
+
+def _upsample_fft(x: np.ndarray, factor: int = UPSAMPLE_FACTOR) -> np.ndarray:
+    """Band-limited temporal upsampling by zero-padding the FFT (display only)."""
+    n = x.shape[-1]
+    X = np.fft.fft(x, axis=-1)
+    k = (n + 1) // 2  # non-negative frequencies
+    Xup = np.zeros((*x.shape[:-1], n * factor), dtype=complex)
+    Xup[..., :k] = X[..., :k]
+    Xup[..., n * factor - (n - k) :] = X[..., k:]
+    return np.fft.ifft(Xup, axis=-1).real * factor
+
+
 class EphysBinViewer(QtWidgets.QMainWindow):
     def __init__(
         self, bin_file: str | Path | None = None, *args, **kwargs
@@ -89,6 +112,18 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             "Open Ephys", lambda checked=False: self.open_openephys()
         )
         self.menuOpen.addAction("NWB", lambda checked=False: self.open_nwb())
+        # lfpack is an optional dependency; only offer its loader when installed
+        if _lfpack_available():
+            self.menuOpen.addAction(
+                "LFPack (HDF5)", lambda checked=False: self.open_lfpack()
+            )
+
+        # display-only temporal upsampling, next to the preprocessing checkboxes
+        self.cb_upsample = QtWidgets.QCheckBox(
+            f"upsample x{UPSAMPLE_FACTOR}", self.select_recording_groupbox
+        )
+        self.select_recording_groupbox.layout().addWidget(self.cb_upsample)
+        self.cb_upsample.toggled.connect(self._on_upsample_toggled)
 
         # probe menu
         self.menuProbe = self.menubar.addMenu("Probe")
@@ -168,20 +203,26 @@ class EphysBinViewer(QtWidgets.QMainWindow):
     FILE_FILTER = "Electrophysiology files (*.*bin *.dat)"
 
     def open_file(
-        self, *args, live: bool = False, file: str | Path | dict | None = None
+        self,
+        *args,
+        live: bool = False,
+        file: str | Path | dict | None = None,
+        settings_key: str = "bin_file_path",
     ) -> None:
         """
         Open a SpikeGLX binary file.
 
         :param live: Whether the binary file is currently being recorded in SpileGLX
         :param file: Full filepath to the file to open.
+        :param settings_key: QSettings key holding the last directory used by
+            this loader, so each menu option remembers its own path.
         """
 
         if file is None:
             file, _ = QtWidgets.QFileDialog.getOpenFileName(
                 parent=self,
                 caption="Select Raw electrophysiology recording",
-                directory=self.settings.value("bin_file_path"),
+                directory=self.settings.value(settings_key),
                 filter=self.FILE_FILTER,
             )
             if file == "":
@@ -190,7 +231,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if isinstance(file, (str, Path)):
             file = Path(file)
             self._path = file
-            self.settings.setValue("bin_file_path", str(file.parent))
+            self.settings.setValue(settings_key, str(file.parent))
             self._open_path(file, live=live)
 
         elif isinstance(file, dict):
@@ -219,7 +260,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
             file, _ = QtWidgets.QFileDialog.getOpenFileName(
                 self,
                 "Select Open Ephys structure.oebin",
-                "",
+                self.settings.value("openephys_path", ""),
                 "Open Ephys (structure.oebin)",
             )
 
@@ -227,6 +268,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 return
 
         folder = Path(file).parent
+        self.settings.setValue("openephys_path", str(folder))
 
         names, _ = se.get_neo_streams("openephysbinary", folder)
         name = names[0]
@@ -258,10 +300,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
         if file is None:
             file, _ = QtWidgets.QFileDialog.getOpenFileName(
-                self, "Select NWB file with electrical series", "", "*.nwb"
+                self,
+                "Select NWB file with electrical series",
+                self.settings.value("nwb_path", ""),
+                "*.nwb",
             )
             if not file:
                 return
+        self.settings.setValue("nwb_path", str(Path(file).parent))
         nwbre = se.nwbextractors.NwbRecordingExtractor
         available_paths = nwbre.fetch_available_electrical_series_paths(file)
         if not available_paths:
@@ -289,6 +335,26 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 return
         raw = se.read_nwb_recording(file, electrical_series_path=selected_path)
         self._show_spikeinterface(raw)
+
+    def open_lfpack(self, file: str | Path | None = None) -> None:
+        """
+        LFPack specific loader for HDF5-packed LFP files (.h5/.hdf5).
+
+        Parameters
+        ----------
+        file : str or Path, optional
+            Path to the lfpack file; a file dialog is shown if None.
+        """
+        if file is None:
+            file, _ = QtWidgets.QFileDialog.getOpenFileName(
+                parent=self,
+                caption="Select lfpack HDF5 recording",
+                directory=self.settings.value("lfpack_path", ""),
+                filter="LFPack HDF5 files (*.h5 *.hdf5)",
+            )
+            if not file:
+                return
+        self.open_file(file=Path(file), settings_key="lfpack_path")
 
     def load_probe_from_library(self):
         """Select probe from probeinterface library and attach to recording"""
@@ -366,9 +432,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
     def _open_path(self, file: Path, live: bool = False) -> None:
         """Build ``self.data`` from a file path.
 
-        Base implementation reads SpikeGLX binaries; subclasses override to
-        handle additional formats and fall back to ``super()`` for binaries.
+        Dispatches on the file extension: ``.h5``/``.hdf5`` archives are read
+        with the optional ``lfpack`` dependency, anything else is read as a
+        SpikeGLX binary.
         """
+        if file.suffix.lower() in (".h5", ".hdf5"):
+            self._open_lfpack(file)
+            return
+        self._hide_recording_selector()
         ReaderClass = spikeglx.Reader if not live else spikeglx.OnlineReader
         try:
             sr = ReaderClass(file)
@@ -381,6 +452,90 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 ns=file.stat().st_size / 384 / 2,
             )
         self.data = SpikeGLXDataModel(sr)
+
+    def _open_lfpack(self, file: Path) -> None:
+        """Open an lfpack HDF5 file, wiring up the recording selector.
+
+        A file may hold a single recording (opened directly) or many keyed by
+        probe-insertion UUID, in which case a searchable selector is shown and
+        the first recording is opened.
+        """
+        try:
+            import lfpack
+        except ImportError as e:
+            raise ImportError(
+                "Reading lfpack HDF5 files requires the optional 'lfpack' "
+                "dependency. Install it with: pip install viewephys[lfpack]"
+            ) from e
+
+        self._lfpack_file = file
+        recordings = lfpack.LFPackReader.recordings(file)
+        if len(recordings) > 1:
+            self._build_recording_selector(recordings)
+            recording = recordings[0]
+        else:
+            self._hide_recording_selector()
+            # An empty list means the legacy single-recording layout.
+            recording = recordings[0] if recordings else None
+
+        reader = lfpack.LFPackReader(file, recording=recording)
+        self.data = LFPackDataModel(reader)
+
+    def _build_recording_selector(self, recordings: list[str]) -> None:
+        """Show a searchable combo box to pick a recording by UUID substring."""
+        if not hasattr(self, "comboBox_recording"):
+            self.groupBox_recording = QtWidgets.QGroupBox("Recording", self.widget_2)
+            layout = QtWidgets.QVBoxLayout(self.groupBox_recording)
+            self.comboBox_recording = QtWidgets.QComboBox(self.groupBox_recording)
+            self.comboBox_recording.setEditable(True)
+            self.comboBox_recording.setInsertPolicy(
+                QtWidgets.QComboBox.InsertPolicy.NoInsert
+            )
+            completer = self.comboBox_recording.completer()
+            completer.setCompletionMode(
+                QtWidgets.QCompleter.CompletionMode.PopupCompletion
+            )
+            completer.setFilterMode(QtCore.Qt.MatchFlag.MatchContains)
+            completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+            layout.addWidget(self.comboBox_recording)
+            # Sits next to the "Select recording" / "Dataset info" group boxes.
+            self.widget_2.layout().addWidget(self.groupBox_recording, 0, 2)
+            self.comboBox_recording.activated.connect(self._on_recording_selected)
+
+        combo = self.comboBox_recording
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(recordings)
+        combo.setCurrentIndex(0)
+        combo.blockSignals(False)
+        self.groupBox_recording.show()
+
+    def _hide_recording_selector(self) -> None:
+        """Hide the recording selector if it was built for a previous file."""
+        if hasattr(self, "groupBox_recording"):
+            self.groupBox_recording.hide()
+
+    def _on_recording_selected(self, index: int) -> None:
+        """Swap in the chosen recording, keeping the window size, position and zoom."""
+        import lfpack
+
+        recording = self.comboBox_recording.itemText(index)
+        reader = lfpack.LFPackReader(self._lfpack_file, recording=recording)
+        self.data = LFPackDataModel(reader)
+
+        # Refresh slider bounds and clamp position into range; keep window and zoom.
+        self.update_slider_limits()
+        max_first = max(0, self.data.get_num_samples() - self.window_length_n)
+        self._first_sample = min(self._first_sample, max_first)
+        slider_value = min(
+            int(round(self._first_sample / self.window_length_n)),
+            self.horizontalSlider.maximum(),
+        )
+        self.horizontalSlider.blockSignals(True)
+        self.horizontalSlider.setValue(slider_value)
+        self.horizontalSlider.blockSignals(False)
+        self._update_time_label()
+        self.on_horizontalSliderReleased()
 
     def _on_live_tick(self) -> None:
         """Re-read the growing file and extend the slider range, keeping the view."""
@@ -509,6 +664,11 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 f"MAD {dc['mad_dc_volts'] * 1e6:0.2f} uV"
             )
         self.label_noise.setText("\n".join(lines))
+
+    def _on_upsample_toggled(self, checked: bool) -> None:
+        """Re-render the current window with/without temporal upsampling."""
+        if checked and hasattr(self, "viewers"):
+            self.on_horizontalSliderReleased()
 
     def _create_top_label(self):
         """Create the label of recording details shown on the main window."""
@@ -675,7 +835,9 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
             data = self.data.get_data(first, last, k, raw=raw)
             # RMS of the displayed step on the current window; steps that are
-            # not ticked are never computed here nor shown in the label
+            # not ticked are never computed here nor shown in the label.
+            # Computed on the step data itself, before any display-only
+            # upsampling.
             self._rms_by_step[k] = array_rms(
                 data,
                 step=k,
@@ -683,10 +845,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 end_sample=last,
                 fs=self.data.get_sampling_frequency(),
             )
+            fs = self.data.get_sampling_frequency()
+            if self.cb_upsample.isChecked():
+                data = _upsample_fft(data, UPSAMPLE_FACTOR)
+                fs *= UPSAMPLE_FACTOR
 
             viewer = viewephys(
                 data,
-                self.data.get_sampling_frequency(),
+                fs,
                 channels=self.data.get_header(),
                 br=self.data.get_brain_regions(),
                 title=k,
@@ -759,107 +925,14 @@ class EphysBinViewer(QtWidgets.QMainWindow):
 
 
 class LFPackBinViewer(EphysBinViewer):
-    """Ephys viewer for lfpack HDF5-packed LFP files.
+    """Ephys viewer whose file dialog also accepts lfpack HDF5 files.
 
-    Extends :class:`EphysBinViewer` with support for the ``.h5`` archives
-    produced by ``lfpack``.  A file may hold a single recording or many keyed
-    by probe-insertion UUID; in the latter case a searchable combo box lets the
-    user switch recording.  SpikeGLX binaries still open through the inherited
-    machinery, so a single window handles both formats.
+    All format handling (``.h5``/``.hdf5`` archives via the optional ``lfpack``
+    dependency, SpikeGLX binaries) lives on :class:`EphysBinViewer`; this
+    subclass only widens the file-dialog filter.
     """
 
     FILE_FILTER = "Electrophysiology files (*.*bin *.dat *.h5 *.hdf5)"
-
-    def _open_path(self, file: Path, live: bool = False) -> None:
-        if file.suffix.lower() in (".h5", ".hdf5"):
-            self._open_lfpack(file)
-        else:
-            self._hide_recording_selector()
-            super()._open_path(file, live=live)
-
-    def _open_lfpack(self, file: Path) -> None:
-        """Open an lfpack HDF5 file, wiring up the recording selector.
-
-        A file may hold a single recording (opened directly) or many keyed by
-        probe-insertion UUID, in which case a searchable selector is shown and
-        the first recording is opened.
-        """
-        try:
-            import lfpack
-        except ImportError as e:
-            raise ImportError(
-                "Reading lfpack HDF5 files requires the optional 'lfpack' "
-                "dependency. Install it with: pip install viewephys[lfpack]"
-            ) from e
-
-        self._lfpack_file = file
-        recordings = lfpack.LFPackReader.recordings(file)
-        if len(recordings) > 1:
-            self._build_recording_selector(recordings)
-            recording = recordings[0]
-        else:
-            self._hide_recording_selector()
-            # An empty list means the legacy single-recording layout.
-            recording = recordings[0] if recordings else None
-
-        reader = lfpack.LFPackReader(file, recording=recording)
-        self.data = LFPackDataModel(reader)
-
-    def _build_recording_selector(self, recordings: list[str]) -> None:
-        """Show a searchable combo box to pick a recording by UUID substring."""
-        if not hasattr(self, "comboBox_recording"):
-            self.groupBox_recording = QtWidgets.QGroupBox("Recording", self.widget_2)
-            layout = QtWidgets.QVBoxLayout(self.groupBox_recording)
-            self.comboBox_recording = QtWidgets.QComboBox(self.groupBox_recording)
-            self.comboBox_recording.setEditable(True)
-            self.comboBox_recording.setInsertPolicy(
-                QtWidgets.QComboBox.InsertPolicy.NoInsert
-            )
-            completer = self.comboBox_recording.completer()
-            completer.setCompletionMode(
-                QtWidgets.QCompleter.CompletionMode.PopupCompletion
-            )
-            completer.setFilterMode(QtCore.Qt.MatchFlag.MatchContains)
-            completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-            layout.addWidget(self.comboBox_recording)
-            # Sits next to the "Select recording" / "Dataset info" group boxes.
-            self.widget_2.layout().addWidget(self.groupBox_recording, 0, 2)
-            self.comboBox_recording.activated.connect(self._on_recording_selected)
-
-        combo = self.comboBox_recording
-        combo.blockSignals(True)
-        combo.clear()
-        combo.addItems(recordings)
-        combo.setCurrentIndex(0)
-        combo.blockSignals(False)
-        self.groupBox_recording.show()
-
-    def _hide_recording_selector(self) -> None:
-        """Hide the recording selector if it was built for a previous file."""
-        if hasattr(self, "groupBox_recording"):
-            self.groupBox_recording.hide()
-
-    def _on_recording_selected(self, index: int) -> None:
-        """Swap in the chosen recording, keeping the window size, position and zoom."""
-        import lfpack
-
-        recording = self.comboBox_recording.itemText(index)
-        reader = lfpack.LFPackReader(self._lfpack_file, recording=recording)
-        self.data = LFPackDataModel(reader)
-
-        # Refresh slider bounds and clamp position into range; keep window and zoom.
-        self.update_slider_limits()
-        max_first = max(0, self.data.get_num_samples() - self.window_length_n)
-        self._first_sample = min(self._first_sample, max_first)
-        slider_value = min(
-            int(round(self._first_sample / self.window_length_n)),
-            self.horizontalSlider.maximum(),
-        )
-        self.horizontalSlider.blockSignals(True)
-        self.horizontalSlider.setValue(slider_value)
-        self.horizontalSlider.blockSignals(False)
-        self._update_time_label()
-        self.on_horizontalSliderReleased()
 
 
 class PickSpikes:
