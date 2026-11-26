@@ -314,6 +314,164 @@ def summarize_dc_offset(dc_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def array_saturation(
+    data: np.ndarray,
+    range_volts: np.ndarray,
+    start_sample: int,
+    end_sample: int,
+    fs: float,
+) -> pd.DataFrame:
+    """
+    Count per-channel saturated samples of one already-loaded raw snippet.
+
+    A sample is saturated when its magnitude reaches the channel's full-scale
+    voltage, i.e. the ADC sat at either rail.
+
+    Parameters
+    ----------
+    data
+        Raw snippet array of shape ``(n_channels, n_samples)``, in volts.
+    range_volts
+        Saturation threshold per channel, shape ``(n_channels,)``, in volts
+        (:meth:`viewephys.data_model.SpikeGLXDataModel.get_saturation_volts`).
+        NaN entries never count as saturated.
+    start_sample
+        First sample of the snippet.
+    end_sample
+        Last sample (exclusive) of the snippet.
+    fs
+        Sampling frequency in Hz.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per channel with columns ``channel``, ``n_saturated``,
+        ``fraction_saturated``, ``start_sample``, ``end_sample`` and
+        ``sampling_frequency``.
+    """
+    limit = np.asarray(range_volts, dtype=np.float64)
+    if limit.shape != (data.shape[0],):
+        raise ValueError(
+            f"range_volts must be a 1D array of shape (n_channels,), got {limit.shape}"
+        )
+    n_saturated = (np.abs(data) >= limit[:, None]).sum(axis=1)
+    n_samples = data.shape[1]
+
+    return pd.DataFrame(
+        {
+            "channel": np.arange(data.shape[0]),
+            "n_saturated": n_saturated,
+            "fraction_saturated": n_saturated / n_samples if n_samples else 0.0,
+            "start_sample": start_sample,
+            "end_sample": end_sample,
+            "sampling_frequency": fs,
+        }
+    )
+
+
+def snippet_saturation(
+    data_model: SpikeGLXDataModel,
+    start_sample: int,
+    end_sample: int,
+) -> pd.DataFrame:
+    """
+    Count per-channel saturated samples of the raw signal on a single snippet.
+
+    Parameters
+    ----------
+    data_model
+        Data model wrapping the recording, e.g. ``SpikeGLXDataModel``.
+    start_sample
+        First sample of the snippet.
+    end_sample
+        Last sample (exclusive) of the snippet.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per channel with columns ``channel``, ``n_saturated``,
+        ``fraction_saturated``, ``start_sample``, ``end_sample`` and
+        ``sampling_frequency``.
+    """
+    raw = data_model.get_raw(start_sample, end_sample)
+    range_volts = data_model.get_saturation_volts()
+    if range_volts is None:
+        raise ValueError("Data model does not provide per-channel saturation voltages.")
+    return array_saturation(
+        raw,
+        range_volts=range_volts,
+        start_sample=start_sample,
+        end_sample=end_sample,
+        fs=data_model.get_sampling_frequency(),
+    )
+
+
+def recording_saturation(
+    data_model: SpikeGLXDataModel,
+    snippet_sec: float = 3.0,
+    fractions: tuple[float, ...] = DEFAULT_FRACTIONS,
+):
+    """
+    Count per-channel saturated samples of the raw signal on multiple snippets.
+
+    Parameters
+    ----------
+    data_model
+        Data model wrapping the recording, e.g. ``SpikeGLXDataModel``.
+    snippet_sec
+        Duration of each snippet in seconds.
+    fractions
+        Positions of the snippet starts as fractions of the recording length.
+
+    Returns
+    -------
+    pd.DataFrame
+        Concatenation of the :func:`snippet_saturation` frames, one row per
+        (snippet, channel).
+    """
+    fs = data_model.get_sampling_frequency()
+    ns = data_model.get_num_samples()
+    n_samples = int(snippet_sec * fs)
+    frames = []
+    for fraction in fractions:
+        start_sample = int(ns * fraction)
+        end_sample = min(start_sample + n_samples, ns)
+        frames.append(snippet_saturation(data_model, start_sample, end_sample))
+    return pd.concat(frames, ignore_index=True)
+
+
+def summarize_saturation(sat_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Aggregate a per-channel saturation dataframe into a report table.
+
+    Parameters
+    ----------
+    sat_df
+        Dataframe as returned by :func:`recording_saturation`.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per snippet (``start_sample``) with columns ``n_channels``,
+        ``n_saturated_channels`` (channels with at least one saturated sample),
+        ``fraction_saturated`` (saturated samples over all samples of the
+        snippet) and ``max_fraction_saturated`` (worst channel).
+    """
+    rows = []
+    for start_sample, group in sat_df.groupby("start_sample", sort=False):
+        fraction_saturated = group["fraction_saturated"].to_numpy(dtype=np.float64)
+        rows.append(
+            {
+                "start_sample": start_sample,
+                "n_channels": group["channel"].nunique(),
+                "n_saturated_channels": int((group["n_saturated"] > 0).sum()),
+                "fraction_saturated": fraction_saturated.mean(),
+                "max_fraction_saturated": fraction_saturated.max(),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 if __name__ == "__main__":
     import sys
 

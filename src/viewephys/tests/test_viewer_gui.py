@@ -157,6 +157,8 @@ class _FakeArraySR(_FakeSR):
     nsync = 0
     type = "ap"
     geometry = {"trace": np.arange(nc)}
+    range_volts = np.full(nc, 1.0, dtype=np.float32)
+    sample2volts = np.full(nc, 1e-6, dtype=np.float32)
 
     def __getitem__(self, key):
         sample_slice, channel_slice = key

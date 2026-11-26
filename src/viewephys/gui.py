@@ -27,8 +27,10 @@ from viewephys.data_model import (
 from viewephys.noise import (
     array_dc_offset,
     array_rms,
+    array_saturation,
     summarize_dc_offset,
     summarize_rms,
+    summarize_saturation,
 )
 from viewephys.viewer.gui import EasyQC
 from viewephys.viewer.qt import create_app
@@ -186,6 +188,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.gridLayout_3.addWidget(self.label_noise, 6, 0, 1, 2)
         self._rms_by_step: dict[str, pd.DataFrame] = {}
         self._dc_df: pd.DataFrame | None = None
+        self._sat_df: pd.DataFrame | None = None
         self.show()
 
         self.data: SpikeGLXDataModel | SpikeInterfaceDataModel
@@ -582,6 +585,7 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         self.viewers: dict[str, EphysViewer | None]
         self._rms_by_step = {}
         self._dc_df = None
+        self._sat_df = None
         self.label_noise.setText("")
 
         # Pre-built descriptive checkboxes for the IBL SpikeGLX pipeline.
@@ -663,6 +667,13 @@ class EphysBinViewer(QtWidgets.QMainWindow):
                 f"max {dc['max_dc_volts'] * 1e6:0.2f} uV, "
                 f"MAD {dc['mad_dc_volts'] * 1e6:0.2f} uV"
             )
+        if self._sat_df is not None:
+            sat = summarize_saturation(self._sat_df).to_dict("records")[0]
+            lines.append(
+                f"Saturation (raw): {sat['n_saturated_channels']} channels, "
+                f"{sat['fraction_saturated'] * 100:0.2f}% of samples"
+            )
+
         self.label_noise.setText("\n".join(lines))
 
     def _on_upsample_toggled(self, checked: bool) -> None:
@@ -898,6 +909,15 @@ class EphysBinViewer(QtWidgets.QMainWindow):
         if raw is not None:
             self._dc_df = array_dc_offset(
                 raw,
+                start_sample=first,
+                end_sample=last,
+                fs=self.data.get_sampling_frequency(),
+            )
+        range_volts = self.data.get_saturation_volts()
+        if raw is not None and range_volts is not None:
+            self._sat_df = array_saturation(
+                raw,
+                range_volts=range_volts,
                 start_sample=first,
                 end_sample=last,
                 fs=self.data.get_sampling_frequency(),

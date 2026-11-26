@@ -43,6 +43,9 @@ class AbstractDataModel(abc.ABC):
     def get_saturation_adc(self) -> float | None: ...
 
     @abc.abstractmethod
+    def get_saturation_volts(self) -> np.ndarray | None: ...
+
+    @abc.abstractmethod
     def get_header(self) -> dict: ...
 
     @abc.abstractmethod
@@ -206,6 +209,12 @@ class SpikeGLXDataModel(AbstractDataModel):
         """ADC saturation level in µV."""
         return self.sr.range_volts[0] * 1e6
 
+    @override
+    def get_saturation_volts(self) -> np.ndarray | None:
+        """ADC saturation level in volts, per channel."""
+        nc = self.sr.nc - self.sr.nsync
+        return (self.sr.range_volts - self.sr.sample2volts)[:nc]
+
 
 class LFPackDataModel(SpikeGLXDataModel):
     """Data model for lfpack HDF5-packed LFP files.
@@ -259,6 +268,11 @@ class LFPackDataModel(SpikeGLXDataModel):
 
     @override
     def get_saturation_adc(self) -> None:
+        """No ADC saturation level: compressed files carry no voltage range."""
+        return None
+
+    @override
+    def get_saturation_volts(self) -> None:
         """No ADC saturation level: compressed files carry no voltage range."""
         return None
 
@@ -486,6 +500,12 @@ class SpikeInterfaceDataModel(AbstractDataModel):
 
     @override
     def get_saturation_adc(self) -> None:
+        # ADC saturation range is hardware-specific and not available through
+        # the SpikeInterface API.
+        return None
+
+    @override
+    def get_saturation_volts(self) -> None:
         # ADC saturation range is hardware-specific and not available through
         # the SpikeInterface API.
         return None
